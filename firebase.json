@@ -1,0 +1,25 @@
+{
+  "firestore": {
+    "rules": "backend/firestore.rules",
+    "indexes": "backend/firestore.indexes.json"
+  },
+  "functions": [{ "source": "backend", "codebase": "catalog", "runtime": "nodejs24", "ignore": ["node_modules", ".pnpm-store", "test", "scripts", "*-debug.log"] }],
+  "hosting": {
+    "site": "caopanheiro-app",
+    "public": "apps/tutor_app/build/web",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [{ "source": "**", "destination": "/index.html" }],
+    "headers": [
+      { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+      { "source": "**/!(*.*)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+      { "source": "/@(index.html|flutter_service_worker.js|flutter_bootstrap.js|main.dart.js|manifest.json|version.json)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+    ]
+  },
+  "emulators": {
+    "auth": { "host": "127.0.0.1", "port": 9099 },
+    "firestore": { "host": "127.0.0.1", "port": 8080 },
+    "functions": { "host": "127.0.0.1", "port": 5001 },
+    "ui": { "enabled": false },
+    "singleProjectMode": true
+  }
+}

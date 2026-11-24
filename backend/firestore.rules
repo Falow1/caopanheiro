@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function canReadTeamCatalog(tenantId) {
+      let tenant = get(/databases/$(database)/documents/tenants/$(tenantId));
+      let member = get(/databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid));
+      let subscription = get(/databases/$(database)/documents/subscriptions/$(tenantId));
+      // Same validity as the server: a manager subscription (accountId) with a
+      // dated trial stays valid after the date; the server applies the E2 phases.
+      return tenant.data.status in ['ACTIVE', 'TRIAL']
+        && subscription.data.tenantId == tenantId
+        && (subscription.data.status == 'ACTIVE'
+          || (subscription.data.status == 'TRIAL'
+            && (subscription.data.renewsAt > request.time || subscription.data.get('accountId', null) is string)))
+        && member.data.active == true
+        && member.data.roles is list
+        && member.data.roles.hasAny(['MANAGER', 'ATTENDANT']);
+    }
+
+    match /tenants/{tenantId}/services/{serviceId} {
+      allow get: if signedIn() && canReadTeamCatalog(tenantId);
+      allow list: if signedIn() && canReadTeamCatalog(tenantId)
+        && request.query.limit != null && request.query.limit <= 100;
+      // Business writes are accepted only by authorized server commands.
+      allow create, update, delete: if false;
+    }
+
+    // Live refresh signals carry only a counter and the time of the last
+    // change; data is still read through the authorized server queries.
+    function activeMember(tenantId) {
+      let path = /databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid);
+      return exists(path) && get(path).data.active == true;
+    }
+
+    function activeStaff(tenantId) {
+      let member = get(/databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid));
+      return activeMember(tenantId)
+        && member.data.roles is list
+        && member.data.roles.hasAny(['MANAGER', 'ATTENDANT', 'PROFESSIONAL', 'DRIVER']);
+    }
+
+    match /tenants/{tenantId}/liveSignals/{signal} {
+      allow get: if signedIn() && (
+        signal == 'tutor-' + request.auth.uid
+        || (signal == 'catalog' && activeMember(tenantId))
+        || (signal == 'team' && activeStaff(tenantId)));
+      allow list, create, update, delete: if false;
+    }
+
+    match /platformSignals/{signal} {
+      allow get: if signedIn() && signal == 'admin'
+        && exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)).data.active == true
+        && get(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)).data.role == 'ADMIN';
+      allow list, create, update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,13 @@
+# Artefatos do Flutter web/PWA e ferramentas locais
+.dart_tool/
+.flutter-plugins-dependencies
+.pub/
+.pub-cache/
+build/
+coverage/
+**/doc/api/
+*.log
+*.iml
+.idea/
+.DS_Store
+*.swp

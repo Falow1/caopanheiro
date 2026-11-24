@@ -1,0 +1,13 @@
+name: petshop_ecosystem
+publish_to: 'none'
+
+environment:
+  sdk: ^3.12.2
+
+workspace:
+  - apps/tutor_app
+  - apps/equipe_app
+  - apps/saas_app
+  - packages/caopanheiro_core
+  - packages/caopanheiro_contracts
+  - packages/caopanheiro_design_system

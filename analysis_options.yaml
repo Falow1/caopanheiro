@@ -1,0 +1,5 @@
+analyzer:
+  exclude:
+    - backend/**
+    - qa_runs/**
+    - validation_runs/**

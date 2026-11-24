@@ -1,0 +1,9 @@
+node_modules
+.pnpm-store
+test
+scripts
+.env*
+*.log
+fly.toml
+Dockerfile
+.dockerignore

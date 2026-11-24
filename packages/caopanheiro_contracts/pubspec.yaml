@@ -1,0 +1,8 @@
+name: caopanheiro_contracts
+description: Enums e contratos canônicos compartilhados do Cãopanheiro.
+version: 0.1.0
+publish_to: 'none'
+resolution: workspace
+
+environment:
+  sdk: ^3.12.2

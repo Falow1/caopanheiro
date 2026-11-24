@@ -1,0 +1,37 @@
+name: equipe_app
+description: "Aplicativo Cãopanheiro para gestor, atendente, profissional e entregador."
+publish_to: 'none'
+resolution: workspace
+version: 1.0.5+20
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  caopanheiro_core: ^0.1.0
+  caopanheiro_contracts: ^0.1.0
+  caopanheiro_design_system: ^0.1.0
+  cupertino_icons: ^1.0.8
+  firebase_core: 5.0.0
+  firebase_auth: 7.0.0
+  cloud_firestore: 7.0.0
+  cloud_functions: 7.0.0
+  sqflite: 2.4.4+2
+  url_launcher: ^6.3.2
+  qr: 4.0.0
+  share_plus: 13.3.1
+
+dev_dependencies:
+  caopanheiro_test_support:
+    path: ../../tool/testing
+  integration_test:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  sqflite_common_ffi: 2.4.4
+
+flutter:
+  uses-material-design: true

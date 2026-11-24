@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Cãopanheiro — agendamentos e cuidados do seu pet.">
+  <meta name="theme-color" content="#146B5C">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Tutor Cãopanheiro">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.json">
+  <title>Tutor Cãopanheiro</title>
+  <style>
+    /* Hide only the SDK's visual banner; local emulator guards remain active. */
+    .firebase-emulator-warning { display: none !important; }
+  </style>
+</head>
+<body>
+  <script>
+    // Chrome on Android announces that the Tutor can be installed, sometimes
+    // before Flutter loads. Keep it for the Instalar button of the login, in
+    // place of Chrome's own banner, and remember when the Tutor is installed.
+    window.addEventListener('beforeinstallprompt', function (event) {
+      event.preventDefault();
+      window.caopanheiroInstallPrompt = event;
+    });
+    window.addEventListener('appinstalled', function () {
+      window.caopanheiroInstallPrompt = null;
+      try { localStorage.setItem('caopanheiro.installed', '1'); } catch (e) {}
+    });
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

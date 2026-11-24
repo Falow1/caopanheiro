@@ -1,0 +1,88 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+.pub-cache/
+build/
+coverage/
+**/doc/api/
+**/ephemeral/
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Dependências Node e cache dos emuladores
+node_modules/
+.pnpm-store/
+.firebase/
+.npm/
+firebase-export-*/
+emulator-data/
+*-debug.log
+*-debug.*.log
+
+# Execuções, evidências e artefatos locais
+/qa_runs/
+/validation_runs/
+*.log
+*.apk
+*.aab
+*.ipa
+*.symbols
+app.*.map.json
+*.zip
+*.sha256
+
+# Cópias locais dos dados (schemas/migrações em código continuam versionados)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Configurações locais, credenciais administrativas e assinatura
+.env
+.env.*
+!.env.example
+!.env.sample
+# Valor fictício do parâmetro da chave web, lido só pelos emuladores locais.
+!backend/.env.demo-caopanheiro-local
+local.properties
+key.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+service-account*.json
+serviceAccount*.json
+*-firebase-adminsdk-*.json
+application_default_credentials.json
+credentials.json
+firebase-debug.log
+ui-debug.log
+
+# Arquivos locais de sistema/editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*.tmp
+*.bak
+*.pyc
+__pycache__/
+
+# Versionar: .firebaserc demo, firebase.json, Rules, índices, lockfiles,
+# .metadata Flutter, testes, seed local, test_support, assets e licenças.
+# Configurações públicas Firebase de clientes não são credenciais Admin SDK.
+/.firebase.local.json
