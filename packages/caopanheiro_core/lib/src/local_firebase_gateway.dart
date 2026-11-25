@@ -245,7 +245,7 @@ class LocalFirebaseGateway implements NetworkProblemSource {
       }
     } on FirebaseAuthException catch (error) {
       if (error.code == 'network-request-failed') rethrow;
-      throw _googleFailure(error);
+      throw await googleFailure(error.code, _checkConnection);
     }
     if (generation != _generation) {
       await _auth.signOut();
@@ -265,33 +265,22 @@ class LocalFirebaseGateway implements NetworkProblemSource {
       }
     } on FirebaseAuthException catch (error) {
       if (error.code == 'network-request-failed') rethrow;
-      throw _googleFailure(error);
+      throw await googleFailure(error.code, _checkConnection);
     }
   });
 
-  Exception _googleFailure(FirebaseAuthException error) => switch (error.code) {
-    'account-exists-with-different-credential' ||
-    'email-already-in-use' => const FormatException(
-      'Já existe uma conta com este e-mail. Entre com e-mail e senha e vincule o Google no Perfil.',
-    ),
-    'credential-already-in-use' => const FormatException(
-      'Esta conta Google já está ligada a outro acesso.',
-    ),
-    'provider-already-linked' => const FormatException(
-      'O Google já está vinculado a esta conta.',
-    ),
-    'popup-closed-by-user' ||
-    'cancelled-popup-request' ||
-    'web-context-canceled' ||
-    'web-context-cancelled' ||
-    'canceled' => const FormatException('Entrada com Google cancelada.'),
-    'popup-blocked' => const FormatException(
-      'O navegador bloqueou a janela do Google. Permita pop-ups e tente de novo.',
-    ),
-    _ => const SessionAccessException(
-      'Não foi possível entrar com o Google. Tente novamente.',
-    ),
-  };
+  /// Whether this device reaches the server of the build: the emulator of a
+  /// local build or, in staging, the server of the calls. The web is left
+  /// out: its Google popup already reports network-request-failed offline.
+  Future<NetworkProblem?> _checkConnection() async {
+    if (kIsWeb) return null;
+    final host = _host;
+    if (host != null) return _probe(host);
+    final server = _server;
+    return server == null
+        ? null
+        : probeConnection(server.host, port: server.port);
+  }
   Future<void> acceptAdministrativeToken(String token) => _translate(() async {
     final owner = uid;
     final generation = _generation;

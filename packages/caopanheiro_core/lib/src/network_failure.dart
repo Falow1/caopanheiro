@@ -29,6 +29,48 @@ Future<NetworkException> confirmNetworkProblem(
   return NetworkException(message, seen ?? fallback);
 }
 
+/// Google sign-in and linking failures as messages. An unknown code may be a
+/// device without internet: on Android the provider page reports a failed
+/// lookup of the Google address as an internal error, not as
+/// network-request-failed. [probe] checks the connection before Google is
+/// blamed; a failed check confirms nothing.
+Future<Exception> googleFailure(
+  String code,
+  Future<NetworkProblem?> Function() probe,
+) async {
+  switch (code) {
+    case 'account-exists-with-different-credential' || 'email-already-in-use':
+      return const FormatException(
+        'Já existe uma conta com este e-mail. Entre com e-mail e senha e vincule o Google no Perfil.',
+      );
+    case 'credential-already-in-use':
+      return const FormatException(
+        'Esta conta Google já está ligada a outro acesso.',
+      );
+    case 'provider-already-linked':
+      return const FormatException('O Google já está vinculado a esta conta.');
+    case 'popup-closed-by-user' ||
+        'cancelled-popup-request' ||
+        'web-context-canceled' ||
+        'web-context-cancelled' ||
+        'canceled':
+      return const FormatException('Entrada com Google cancelada.');
+    case 'popup-blocked':
+      return const FormatException(
+        'O navegador bloqueou a janela do Google. Permita pop-ups e tente de novo.',
+      );
+  }
+  NetworkProblem? problem;
+  try {
+    problem = await probe();
+  } catch (_) {}
+  return problem == null
+      ? const SessionAccessException(
+          'Não foi possível entrar com o Google. Tente novamente.',
+        )
+      : NetworkException.of(problem);
+}
+
 /// Firebase Auth refusals as messages the person can act on. [signingIn]
 /// tells wrong credentials apart from a session that ended during use.
 FormatException authFailure(String code, {required bool signingIn}) {

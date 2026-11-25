@@ -10,7 +10,7 @@
 ![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white)
 ![Fly.io](https://img.shields.io/badge/API-Fly.io-7B3FE4?logo=flydotio&logoColor=white)
 ![Plataformas](https://img.shields.io/badge/plataformas-Android%20%7C%20Web%20(PWA)-A64B1E)
-![Versão](https://img.shields.io/badge/vers%C3%A3o-1.0.5-1F2A2E)
+![Versão](https://img.shields.io/badge/vers%C3%A3o-1.0.6-1F2A2E)
 
 [Abrir o app do tutor](https://caopanheiro-app.web.app) · [Baixar os apps Android](https://github.com/Falow1/caopanheiro/releases/latest)
 
@@ -133,7 +133,7 @@ backend/
 
 ## Status
 
-Versão 1.0.5, em que o telefone tem a mesma máscara e o mesmo filtro nos três aplicativos e no servidor, o app do tutor fala em petshop no vínculo e explica onde achar o convite, a consulta offline do SaaS vale por 24 horas depois da última conexão e a cópia offline do Equipe e do SaaS não sai do celular por backup nem transferência, sobre a 1.0.0, a primeira publicada. A demonstração pública usa um ambiente de teste com dados fictícios.
+Versão 1.0.6, em que o link de convite do app da equipe abre o cadastro também com o app já aberto, a entrada com Google sem internet avisa a falta de conexão e os três aplicativos mostram em português também os seletores de data e os menus do sistema, sobre a 1.0.5, em que o telefone tem a mesma máscara e o mesmo filtro nos três aplicativos e no servidor, o app do tutor fala em petshop no vínculo e explica onde achar o convite, a consulta offline do SaaS vale por 24 horas depois da última conexão e a cópia offline do Equipe e do SaaS não sai do celular por backup nem transferência, sobre a 1.0.0, a primeira publicada. A demonstração pública usa um ambiente de teste com dados fictícios.
 
 Ainda não fazem parte desta versão:
 

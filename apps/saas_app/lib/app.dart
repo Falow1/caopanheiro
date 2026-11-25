@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/app_theme.dart';
 import 'features/auth/login_screen.dart';
@@ -17,6 +18,12 @@ class SaasAdminApp extends StatelessWidget {
     child: MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'SaaS Cãopanheiro',
+      // Portuguese also for what Flutter writes itself: the date picker of
+      // Renovar até (typed as day/month/year), the copy and paste menu and
+      // the labels read by the screen reader.
+      locale: const Locale('pt', 'BR'),
+      supportedLocales: const [Locale('pt', 'BR')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: AppTheme.light,
       home: controller.admin == null
           ? const LoginScreen()

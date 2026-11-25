@@ -5,6 +5,7 @@ import 'modules/driver/state/app_scope.dart' as delivery;
 import 'features/navigation/unified_shell.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/app_theme.dart';
 
@@ -34,7 +35,7 @@ class InternalApp extends StatelessWidget {
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
           onGenerateRoute: (settings) {
-            final link = StaffLink.tryParse(settings.name);
+            final link = StaffLink.fromRoute(settings.name);
             return link == null
                 ? null
                 : MaterialPageRoute(
@@ -45,6 +46,12 @@ class InternalApp extends StatelessWidget {
           onUnknownRoute: (_) =>
               MaterialPageRoute(builder: (_) => const LoginScreen()),
           title: 'Equipe Cãopanheiro',
+          // Portuguese also for what Flutter writes itself: the date picker
+          // (typed as day/month/year), the 24-hour clock, the copy and paste
+          // menu and the labels read by the screen reader.
+          locale: const Locale('pt', 'BR'),
+          supportedLocales: const [Locale('pt', 'BR')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           theme: AppTheme.light.copyWith(
             appBarTheme: AppTheme.light.appBarTheme.copyWith(
               centerTitle: false,

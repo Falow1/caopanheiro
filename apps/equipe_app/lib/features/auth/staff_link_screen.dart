@@ -95,7 +95,13 @@ class _StaffLinkScreenState extends State<StaffLinkScreen> {
     return PopScope(
       canPop: false,
       child: Scaffold(
-        appBar: AppBar(title: const Text('Convite para o petshop')),
+        // Leaving is only through "Voltar ao login", which ends the session
+        // of the invite. A link opened with the app running leaves screens
+        // below; a back arrow here would do nothing.
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          title: const Text('Convite para o petshop'),
+        ),
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),
@@ -311,7 +317,7 @@ class _StaffLinkEntryDialogState extends State<_StaffLinkEntryDialog> {
         controller: _input,
         decoration: const InputDecoration(labelText: 'Cole o link do convite'),
         validator: (v) =>
-            StaffLink.tryParse(v) == null ? 'Confira o link recebido' : null,
+            StaffLink.fromText(v) == null ? 'Confira o link recebido' : null,
       ),
     ),
     actions: [
@@ -322,7 +328,7 @@ class _StaffLinkEntryDialogState extends State<_StaffLinkEntryDialog> {
       FilledButton(
         onPressed: () {
           if (_form.currentState!.validate()) {
-            Navigator.pop(context, StaffLink.tryParse(_input.text));
+            Navigator.pop(context, StaffLink.fromText(_input.text));
           }
         },
         child: const Text('Abrir convite'),

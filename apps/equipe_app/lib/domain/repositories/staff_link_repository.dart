@@ -35,6 +35,35 @@ class StaffLink {
     }
     return StaffLink(tenantId: tenant, inviteId: id, token: token);
   }
+
+  /// Invite pasted by the person. Chat apps do not turn `caopanheiro://`
+  /// into a tappable link, so the person copies it, often with the whole
+  /// message around it or a final period; the link is found in the text.
+  static StaffLink? fromText(String? text) {
+    final link = tryParse(text);
+    if (link != null) return link;
+    final found = RegExp(r'caopanheiro://convite\?\S+').firstMatch(text ?? '');
+    if (found == null) return null;
+    return tryParse(found[0]!.replaceFirst(RegExp(r'[.,;:!?)\]}>"]+$'), ''));
+  }
+
+  /// Invite carried by a route name. On a cold start the route is the whole
+  /// link; when the link arrives with the app already open, Flutter keeps
+  /// only the path and the query, so `caopanheiro://convite?...` comes as
+  /// `/?empresa=...`. Android only delivers convite links to the app.
+  static StaffLink? fromRoute(String? name) {
+    final link = tryParse(name);
+    if (link != null) return link;
+    final uri = Uri.tryParse(name?.trim() ?? '');
+    if (uri == null || uri.hasScheme || uri.path != '/') return null;
+    return tryParse(
+      Uri(
+        scheme: 'caopanheiro',
+        host: 'convite',
+        queryParameters: uri.queryParameters,
+      ).toString(),
+    );
+  }
 }
 
 abstract interface class StaffLinkRepository {

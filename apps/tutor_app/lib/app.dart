@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppTipsScope;
 
@@ -20,6 +21,13 @@ class TutorApp extends StatelessWidget {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Tutor Cãopanheiro',
+        // Portuguese also for what Flutter writes itself: the date pickers of
+        // the booking and of the pet's birthday (typed as day/month/year),
+        // hours as 14:00 and the labels read by the screen reader. The copy
+        // and paste menu is the browser's own.
+        locale: const Locale('pt', 'BR'),
+        supportedLocales: const [Locale('pt', 'BR')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         // The top bar keeps its colour when the content scrolls under it,
         // as on the screens without a bar.
         theme: AppTheme.light.copyWith(
