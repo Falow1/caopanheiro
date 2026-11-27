@@ -42,7 +42,6 @@ class AppCodeVerificationPage extends StatefulWidget {
 
 class _AppCodeVerificationPageState extends State<AppCodeVerificationPage> {
   final _code = TextEditingController();
-  final _focus = FocusNode();
   bool _sent = false;
 
   @override
@@ -56,7 +55,6 @@ class _AppCodeVerificationPageState extends State<AppCodeVerificationPage> {
   @override
   void dispose() {
     _code.dispose();
-    _focus.dispose();
     super.dispose();
   }
 
@@ -119,16 +117,49 @@ class _AppCodeVerificationPageState extends State<AppCodeVerificationPage> {
                   // readers keep working on the field itself.
                   Semantics(
                     label: 'Código de 6 números',
-                    child: GestureDetector(
-                      onTap: () => _focus.requestFocus(),
-                      child: Stack(
-                        children: [
-                          Opacity(
+                    child: Stack(
+                      children: [
+                        Row(
+                          children: [
+                            for (var index = 0; index < 6; index++) ...[
+                              if (index > 0) const SizedBox(width: 8),
+                              Expanded(
+                                child: AspectRatio(
+                                  aspectRatio: 0.85,
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 150),
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.paper,
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        width: index == digits.length ? 2 : 1,
+                                        color: index == digits.length
+                                            ? AppColors.primary
+                                            : AppColors.line,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      index < digits.length
+                                          ? digits[index]
+                                          : '',
+                                      style: theme.textTheme.headlineSmall,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        // Let the field handle taps even when Android has hidden
+                        // the keyboard while keeping focus.
+                        Positioned.fill(
+                          child: Opacity(
                             opacity: 0,
+                            alwaysIncludeSemantics: true,
                             child: TextField(
                               key: const ValueKey('code-field'),
                               controller: _code,
-                              focusNode: _focus,
                               autofocus: true,
                               keyboardType: TextInputType.number,
                               inputFormatters: [
@@ -140,44 +171,8 @@ class _AppCodeVerificationPageState extends State<AppCodeVerificationPage> {
                               },
                             ),
                           ),
-                          Row(
-                            children: [
-                              for (var index = 0; index < 6; index++) ...[
-                                if (index > 0) const SizedBox(width: 8),
-                                Expanded(
-                                  child: AspectRatio(
-                                    aspectRatio: 0.85,
-                                    child: AnimatedContainer(
-                                      duration: const Duration(
-                                        milliseconds: 150,
-                                      ),
-                                      alignment: Alignment.center,
-                                      decoration: BoxDecoration(
-                                        color: AppColors.paper,
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                          width: index == digits.length
-                                              ? 2
-                                              : 1,
-                                          color: index == digits.length
-                                              ? AppColors.primary
-                                              : AppColors.line,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        index < digits.length
-                                            ? digits[index]
-                                            : '',
-                                        style: theme.textTheme.headlineSmall,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                   if (widget.error != null) ...[
@@ -203,7 +198,9 @@ class _AppCodeVerificationPageState extends State<AppCodeVerificationPage> {
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: widget.busy ? null : _request,
-                    child: Text(_sent ? 'Enviar outro código' : 'Enviar código'),
+                    child: Text(
+                      _sent ? 'Enviar outro código' : 'Enviar código',
+                    ),
                   ),
                   if (widget.demoNote != null || widget.onSkip != null) ...[
                     const SizedBox(height: 20),

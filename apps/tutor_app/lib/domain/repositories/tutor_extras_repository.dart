@@ -18,8 +18,9 @@ abstract interface class TutorExtrasRepository {
   Future<List<TutorSlot>> rescheduleSlots(
     String day,
     List<Map<String, dynamic>> items,
-    String appointmentId,
-  );
+    String appointmentId, {
+    String? distribution,
+  });
 
   /// Asks for pickup/return on an appointment that already exists.
   Future<void> requestTransport(String appointmentId, String quoteId);

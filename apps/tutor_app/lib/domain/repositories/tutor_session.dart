@@ -26,17 +26,61 @@ class TutorCompany {
   final DateTime? bookingNoticeFrom;
 }
 
+/// The pet of a booking and who does it, from [startsAt] to [endsAt].
+class SlotAssignment {
+  const SlotAssignment({
+    required this.petId,
+    required this.professionalId,
+    required this.professionalName,
+    required this.startsAt,
+    required this.endsAt,
+  });
+  final String petId;
+  final String professionalId;
+  final String professionalName;
+  final DateTime startsAt;
+  final DateTime endsAt;
+}
+
+/// A professional free at the start of a slot, for [freeMinutes] in a row
+/// (capped at the summed time of the services).
+class SlotProfessional {
+  const SlotProfessional(this.id, this.name, this.freeMinutes);
+  final String id;
+  final String name;
+  final int freeMinutes;
+}
+
+/// A start time. With the distribution of the pets, [assignments] is the
+/// automatic one, [minutes] the real time of the booking (the busiest
+/// professional) and [professionals] who is free to be chosen per pet;
+/// [professionalId] is the professional of the first pet.
 class TutorSlot {
   const TutorSlot({
     required this.startsAt,
     required this.label,
     required this.professionalId,
     required this.professionalName,
+    this.endsAt,
+    this.minutes,
+    this.assignments = const [],
+    this.professionals = const [],
   });
   final DateTime startsAt;
   final String label;
   final String professionalId;
   final String professionalName;
+  final DateTime? endsAt;
+  final int? minutes;
+  final List<SlotAssignment> assignments;
+  final List<SlotProfessional> professionals;
+}
+
+/// How the pets of a booking go to the professionals: the server chooses
+/// (ANY) or the tutor chooses per pet (SPECIFIC).
+abstract final class Distribution {
+  static const any = 'ANY';
+  static const specific = 'SPECIFIC';
 }
 
 /// Answer of an accepted invite. The petshop's fixed link may only register a
@@ -72,6 +116,7 @@ abstract interface class TutorSession {
   Future<void> signOut();
   Future<List<TutorSlot>> availableSlots(
     String day,
-    List<Map<String, dynamic>> items,
-  );
+    List<Map<String, dynamic>> items, {
+    String? distribution,
+  });
 }

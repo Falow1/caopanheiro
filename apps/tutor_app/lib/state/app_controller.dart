@@ -14,6 +14,7 @@ import '../domain/models/tutor.dart';
 import '../domain/policies/tutor_invite.dart';
 import '../domain/repositories/login_code_repository.dart';
 import '../domain/repositories/petshop_repository.dart';
+import '../domain/repositories/tutor_address_repository.dart';
 import '../domain/repositories/tutor_extras_repository.dart';
 import '../domain/repositories/tutor_pet_policy.dart';
 import '../domain/repositories/tutor_session.dart';
@@ -456,13 +457,19 @@ class AppController extends AppControllerBase
   Future<List<TutorSlot>> rescheduleSlots(
     String day,
     List<Map<String, dynamic>> items,
-    String appointmentId,
-  ) async {
+    String appointmentId, {
+    String? distribution,
+  }) async {
     final extras = _extras;
     if (extras == null) return [];
     final epoch = _epoch;
     try {
-      return await extras.rescheduleSlots(day, items, appointmentId);
+      return await extras.rescheduleSlots(
+        day,
+        items,
+        appointmentId,
+        distribution: distribution,
+      );
     } on SessionAccessException {
       await _handleAccessLoss(epoch);
       rethrow;
@@ -492,13 +499,18 @@ class AppController extends AppControllerBase
   );
   Future<List<TutorSlot>> availableSlots(
     String day,
-    List<Map<String, dynamic>> items,
-  ) async {
+    List<Map<String, dynamic>> items, {
+    String? distribution,
+  }) async {
     final session = _session;
     if (session == null) return [];
     final epoch = _epoch;
     try {
-      return await session.availableSlots(day, items);
+      return await session.availableSlots(
+        day,
+        items,
+        distribution: distribution,
+      );
     } on SessionAccessException {
       await _handleAccessLoss(epoch);
       rethrow;
@@ -559,6 +571,38 @@ class AppController extends AppControllerBase
     try {
       await transportPolicy();
     } catch (_) {}
+  }
+
+  TutorAddressRepository? get _address => _repository is TutorAddressRepository
+      ? _repository as TutorAddressRepository
+      : null;
+
+  /// The address of the account can be kept and read back (online Tutor).
+  bool get addressAvailable => _address != null;
+
+  /// Address kept in the account for the transport; null when none.
+  TutorAddress? get savedAddress => _address?.savedAddress;
+
+  /// Keeps the address in the account, or removes it when null. Throws on
+  /// failure, so the page that asked decides what to tell.
+  Future<void> saveAddress(TutorAddress? address) async {
+    final repository = _address;
+    if (repository == null) return;
+    final epoch = _epoch;
+    try {
+      await repository.saveAddress(address);
+    } on SessionAccessException {
+      await _handleAccessLoss(epoch);
+      rethrow;
+    }
+    if (epoch == _epoch) notifyListeners();
+  }
+
+  /// Street and district of a point of the map, to fill the address.
+  Future<ReversedAddress?> reverseAddress(double lat, double lng) async {
+    final repository = _address;
+    if (repository == null) return null;
+    return _transportRead((_) => repository.reverseAddress(lat, lng));
   }
 
   Future<List<Map<String, dynamic>>> searchTransportAddress(String query) =>

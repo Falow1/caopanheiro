@@ -93,6 +93,9 @@ abstract final class TipTargets {
   static const scheduleOtherDate = 'tutor.schedule.other_date';
   static const scheduleProfessional = 'tutor.schedule.professional';
   static const scheduleTimes = 'tutor.schedule.times';
+
+  /// Who does each pet at the chosen time, and the choice per pet.
+  static const schedulePets = 'tutor.schedule.pets';
   // The card of the review, or the summary beside the steps on wide windows.
   static const confirmSummary = 'tutor.confirm.summary';
   static const confirmButton = 'tutor.confirm.button';
@@ -169,7 +172,8 @@ abstract final class TutorTips {
     AppTourTip(
       target: TipTargets.profileEdit,
       title: 'Editar dados',
-      text: 'Atualize o seu nome e o seu telefone.',
+      text:
+          'Atualize o seu nome, o seu telefone e o endereço da busca e da entrega dos pets.',
     ),
     AppTourTip(
       target: TipTargets.profileHistory,
@@ -224,12 +228,20 @@ abstract final class TutorTips {
     AppTourTip(
       target: TipTargets.scheduleProfessional,
       title: 'Profissional',
-      text: 'Escolha um profissional ou deixe qualquer um.',
+      text:
+          'Deixe qualquer profissional, escolha um para todos os pets ou escolha por pet. Com profissionais diferentes, os pets são atendidos ao mesmo tempo.',
     ),
     AppTourTip(
       target: TipTargets.scheduleTimes,
       title: 'Horários',
       text: 'Toque no horário que preferir e continue.',
+    ),
+    // Under the times, once one is chosen.
+    AppTourTip(
+      target: TipTargets.schedulePets,
+      title: 'Quem atende cada pet',
+      text:
+          'Mostra quem atende cada pet e a que horas. Na escolha por pet, só aparecem os profissionais livres, e o Continuar espera uma combinação que caiba no horário.',
     ),
   ];
 

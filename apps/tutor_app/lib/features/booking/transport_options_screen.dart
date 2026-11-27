@@ -8,8 +8,7 @@ import '../navigation/tutor_wide_layout.dart';
 import 'booking_draft.dart';
 import 'confirmation_screen.dart';
 import 'widgets/booking_frame.dart';
-import '../transport/map_picker_stub.dart'
-    if (dart.library.js_interop) '../transport/map_picker_web.dart';
+import '../transport/address_editor.dart';
 
 class TransportOptionsScreen extends StatefulWidget {
   const TransportOptionsScreen({
@@ -28,15 +27,16 @@ class TransportOptionsScreen extends StatefulWidget {
 
 class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
   final _form = GlobalKey<FormState>();
-  final _address = TextEditingController(),
-      _district = TextEditingController(),
-      _name = TextEditingController(),
-      _phone = TextEditingController();
-  Map<String, dynamic>? _policy, _quote, _point, _center;
-  bool _pointFromMap = false;
-  List<Map<String, dynamic>> _places = [];
+  final _name = TextEditingController(), _phone = TextEditingController();
+  // The address and its point; it starts with the one kept in the account.
+  AddressEditingController? _address;
+  int _addressRevision = 0;
+  Map<String, dynamic>? _policy, _quote, _center;
   bool _pickup = false, _return = false, _busy = true;
-  String? _error, _company;
+
+  /// Keeps the address in the account for the next requests.
+  bool _remember = true;
+  String? _error, _company, _rememberNote;
   @override
   void initState() {
     super.initState();
@@ -44,10 +44,33 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_address != null) return;
+    final saved = AppScope.of(context).savedAddress;
+    final address = AddressEditingController(
+      initial: saved,
+      search: (query) => AppScope.of(context).searchTransportAddress(query),
+      reverse: AppScope.of(context).addressAvailable
+          ? (lat, lng) => AppScope.of(context).reverseAddress(lat, lng)
+          : null,
+    );
+    _address = address;
+    _addressRevision = address.revision;
+    address.addListener(() {
+      if (address.revision != _addressRevision && mounted) {
+        _addressRevision = address.revision;
+        setState(_invalidate);
+      }
+    });
+  }
+
+  @override
   void dispose() {
-    for (final c in [_address, _district, _name, _phone]) {
+    for (final c in [_name, _phone]) {
       c.dispose();
     }
+    _address?.dispose();
     super.dispose();
   }
 
@@ -65,6 +88,7 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
           _center = p['shop']?['point'] == null
               ? null
               : Map<String, dynamic>.from(p['shop']['point']);
+          _remember = c.addressAvailable;
         });
       }
     } catch (e) {
@@ -79,59 +103,51 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
     widget.draft.transportQuote = null;
   }
 
-  Future<void> _search() async {
-    if (_address.text.trim().length < 5) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-      _places = [];
-      _point = null;
-      _pointFromMap = false;
-      _invalidate();
-    });
-    try {
-      final rows = await AppScope.of(
-        context,
-      ).searchTransportAddress(_address.text.trim());
-      if (mounted && _sameCompany) {
-        setState(() {
-          _places = rows;
-          if (rows.isEmpty) {
-            _error =
-                'Nenhum endereço encontrado. Complete a busca ou marque no mapa.';
-          }
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   Future<void> _calculate() async {
     if (!_form.currentState!.validate()) return;
-    if (_point == null) {
+    final address = _address!.value;
+    if (address == null) {
       setState(
         () => _error =
-            'Selecione o endereço encontrado ou marque o ponto no mapa.',
+            'Selecione o endereço encontrado, use a sua localização ou marque o ponto no mapa.',
       );
       return;
     }
     setState(() {
       _busy = true;
       _error = null;
+      _rememberNote = null;
       _invalidate();
     });
+    final controller = AppScope.of(context);
     try {
-      final q = await AppScope.of(context).quoteTransport(_pickup, _return, {
+      final q = await controller.quoteTransport(_pickup, _return, {
         'name': normalizePersonName(_name.text),
         'phone': formatBrazilPhone(_phone.text) ?? _phone.text.trim(),
-        'street': _address.text.trim(),
-        'district': _district.text.trim(),
-        'point': _point,
+        'street': address.street,
+        'district': address.district,
+        'point': address.point,
       });
       if (mounted && _sameCompany) setState(() => _quote = q);
+      // The address the route accepted is kept for the next requests.
+      if (_remember && controller.savedAddress != address) {
+        try {
+          await controller.saveAddress(address);
+          if (mounted) {
+            setState(
+              () => _rememberNote =
+                  'Endereço guardado na sua conta para os próximos pedidos.',
+            );
+          }
+        } catch (_) {
+          if (mounted) {
+            setState(
+              () => _rememberNote =
+                  'Não foi possível guardar o endereço na sua conta; ele vale para este pedido.',
+            );
+          }
+        }
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -286,8 +302,10 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
       pets: draft.pets,
       services: draft.selectedServices,
       when: at == null ? null : BookingSummary.day(at, formatTime(at)),
-      professional: draft.professionalName ?? 'Qualquer profissional',
+      professional: draft.professionalLabel,
       showProfessional: AppScope.of(context).integrated,
+      petProfessionals: draft.pets.length > 1 ? draft.petProfessionals : null,
+      reservedMinutes: draft.scheduleMinutes,
       transport: !(_pickup || _return)
           ? 'Você leva e busca os pets'
           : quote == null
@@ -420,9 +438,11 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
     ),
     const SizedBox(height: 4),
     Text(
-      '1. Escreva a rua, o número e a cidade e toque em Buscar endereço.\n'
-      '2. Escolha o endereço encontrado ou marque o ponto no mapa.\n'
-      '3. Toque em Calcular taxa de transporte.',
+      AppScope.of(context).savedAddress == null
+          ? '1. Escreva o endereço e toque em Buscar endereço, use a sua localização ou marque o ponto no mapa.\n'
+                '2. Confira a rua, o número e o bairro.\n'
+                '3. Toque em Calcular taxa de transporte.'
+          : 'Este é o endereço guardado na sua conta. Corrija se precisar e toque em Calcular taxa de transporte.',
       style: const TextStyle(color: AppColors.muted),
     ),
     const SizedBox(height: 12),
@@ -447,87 +467,29 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
       validator: phoneValidator,
     ),
     const SizedBox(height: 10),
-    TextFormField(
-      enabled: !_busy,
-      controller: _address,
-      decoration: const InputDecoration(
-        labelText: 'Endereço completo, número e cidade',
-        helperText: 'Ex.: Rua das Acácias, 245, Cuiabá',
+    AddressFields(controller: _address!, enabled: !_busy),
+    if (AppScope.of(context).addressAvailable)
+      CheckboxListTile(
+        key: const ValueKey('transport-remember-address'),
+        contentPadding: EdgeInsets.zero,
+        controlAffinity: ListTileControlAffinity.leading,
+        value: _remember,
+        onChanged: _busy ? null : (v) => setState(() => _remember = v == true),
+        title: const Text(
+          'Guardar este endereço na minha conta para os próximos pedidos',
+        ),
       ),
-      onChanged: (_) => setState(() {
-        if (!_pointFromMap) _point = null;
-        _places = [];
-        _invalidate();
-      }),
-      validator: (v) =>
-          (v?.trim().length ?? 0) < 3 ? 'Informe o endereço' : null,
-    ),
-    const SizedBox(height: 10),
-    OutlinedButton.icon(
-      onPressed: _busy ? null : _search,
-      icon: const Icon(Icons.search),
-      label: const Text('Buscar endereço'),
-    ),
-    for (final result in _places)
-      ListTile(
-        title: Text(result['label'] as String),
-        leading: const Icon(Icons.place_outlined),
-        onTap: _busy
-            ? null
-            : () => setState(() {
-                _point = Map<String, dynamic>.from(result['point']);
-                _center = _point;
-                _pointFromMap = false;
-                _places = [];
-                _invalidate();
-              }),
-      ),
-    const SizedBox(height: 10),
-    TextFormField(
-      enabled: !_busy,
-      controller: _district,
-      decoration: const InputDecoration(
-        labelText: 'Bairro e cidade / complemento',
-        helperText: 'Ex.: Centro, Cuiabá · apto 12',
-      ),
-      onChanged: (_) => setState(_invalidate),
-      validator: (v) =>
-          (v?.trim().isEmpty ?? true) ? 'Informe o bairro/cidade' : null,
-    ),
   ];
 
   /// The map, [height] tall: under the address, or beside it when [top] is
   /// false.
   List<Widget> _map(double height, {bool top = true}) => [
-    if (top) const SizedBox(height: 12),
-    Text(
-      // With a mouse the point is marked with a click.
-      '${tutorWide(context) ? 'Ou clique' : 'Ou toque'} no mapa para marcar o ponto. Confira o número e o complemento no endereço ${top ? 'acima' : 'ao lado'}.',
-    ),
-    const SizedBox(height: 8),
-    SizedBox(
+    AddressMap(
+      controller: _address!,
       height: height,
-      child: MapPicker(
-        key: ValueKey(_center.toString()),
-        center: _center,
-        onSelected: (lat, lng) {
-          if (!_busy) {
-            setState(() {
-              _point = {'lat': lat, 'lng': lng};
-              _pointFromMap = true;
-              _invalidate();
-            });
-          }
-        },
-      ),
-    ),
-    if (_point != null)
-      const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: Text('Ponto selecionado. Confira o endereço antes de calcular.'),
-      ),
-    const Text(
-      'Busca e mapa © OpenStreetMap contributors. O endereço consultado e os pontos da rota são enviados aos serviços de mapas.',
+      center: _center,
+      top: top,
+      enabled: !_busy,
     ),
   ];
 
@@ -543,6 +505,11 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
       onPressed: _busy ? null : _calculate,
       child: const Text('Calcular taxa de transporte'),
     ),
+    if (_rememberNote case final note?)
+      Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Text(note, style: const TextStyle(color: AppColors.muted)),
+      ),
     if (_quote != null) ...[
       const SizedBox(height: 12),
       Card(

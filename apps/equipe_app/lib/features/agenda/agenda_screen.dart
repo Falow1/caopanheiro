@@ -276,13 +276,10 @@ class _AppointmentCard extends StatelessWidget {
                         .map((service) => service.name)
                         .join(' + '),
                   ),
-                  if (item.professional != null)
+                  if (item.professionals case final names?)
                     Padding(
                       padding: const EdgeInsets.only(top: 3),
-                      child: Text(
-                        item.professional!,
-                        style: AppTextStyles.caption,
-                      ),
+                      child: Text(names, style: AppTextStyles.caption),
                     ),
                   const SizedBox(height: 9),
                   StatusBadge(status: item.status),

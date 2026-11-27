@@ -6,7 +6,7 @@ import { effectiveManagementPermissions } from './management_permissions.js';
 import { publicProfessional, requirePrincipal } from './staff_privacy.js';
 import { teamCustomers } from './customers.js';
 import { jsonAppointment } from './scheduling.js';
-import { professionalRows } from './profiles.js';
+import { professionalAppointments, professionalRows } from './profiles.js';
 import { returnReadiness } from './pet_execution.js';
 import { staffMembersFilter } from './staff_members.js';
 
@@ -47,7 +47,7 @@ export const getCompanyView = onCall(options, async request => {
       return {tenantId,role,resource,items:doc.exists?[{id:doc.id,timeZone:doc.get('timeZone'),days:doc.get('days'),slotMinutes:doc.get('slotMinutes')}]:[],nextCursor:null};
     }
     let query=db.collection('tenants/'+tenantId+'/'+resource);
-    if(role==='PROFESSIONAL') query=query.where('professionalUid','==',uid);
+    if(role==='PROFESSIONAL') query=professionalAppointments(query,uid);
     if(role==='DRIVER') query=query.where('driverUid','==',uid);
     // Tutors share the members collection; page only through the team.
     if(resource==='members') query=query.where(staffMembersFilter());
@@ -55,7 +55,7 @@ export const getCompanyView = onCall(options, async request => {
     if(cursor)query=query.startAfter(cursor);
     const page=await tx.get(query);
     let items;
-    if(role==='PROFESSIONAL')items=page.docs.flatMap(professionalRows);
+    if(role==='PROFESSIONAL')items=page.docs.flatMap((doc)=>professionalRows(doc,uid));
     else if(resource==='appointments')items=page.docs.map(jsonAppointment);
     else if(resource==='customers')items=(await teamCustomers(tx,db,tenantId,page.docs)).customers;
     else if(resource==='professionals')items=page.docs.map(publicProfessional);

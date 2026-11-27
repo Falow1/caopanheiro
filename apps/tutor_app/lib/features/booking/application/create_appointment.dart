@@ -1,4 +1,5 @@
 import '../../../domain/models/appointment.dart';
+import '../../../domain/repositories/tutor_session.dart';
 import '../booking_draft.dart';
 
 Appointment createAppointmentFromDraft(BookingDraft draft) => Appointment(
@@ -24,6 +25,16 @@ Appointment createAppointmentFromDraft(BookingDraft draft) => Appointment(
   tutorNotes: draft.tutorNotes.trim(),
   companyId: draft.companyId,
   professionalId: draft.professionalId,
+  // The tutor app always books with the distribution of the pets: the server
+  // chooses (ANY) or checks the professional chosen for each pet (SPECIFIC).
+  distribution: draft.distribution,
+  assignments: draft.distribution == Distribution.specific
+      ? [
+          for (final pet in draft.pets)
+            {'petId': pet.id, 'professionalId': draft.assignments[pet.id]!},
+        ]
+      : null,
+  scheduleMinutes: draft.scheduleMinutes,
   companyStartsAt: draft.companyStartsAt,
   startsAt: draft.startsAt!,
   status: AppointmentStatus.confirmed,

@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppScreenTips, AppTourTarget;
 import '../../core/screen_tips.dart';
-import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppPetIcon, AppRadii;
 
 import '../../core/theme/app_theme.dart';
 import '../../domain/models/pet.dart';
 import '../../state/app_scope.dart';
+import '../navigation/tutor_wide_layout.dart';
+import '../pets/pet_card.dart';
 import '../pets/pet_form_screen.dart';
 import 'booking_draft.dart';
 import 'service_selection_screen.dart';
@@ -86,35 +86,46 @@ class _PetSelectionScreenState extends State<PetSelectionScreen> {
         const SizedBox(height: 8),
         const Text('Você pode selecionar mais de um pet.'),
         const SizedBox(height: 24),
-        // One under the other on the phone; two per row on wide windows.
-        BookingGrid(
-          children: [
-            for (final pet in pets)
-              AppTourTarget(
-                id: TipTargets.bookingPet,
-                child: _SelectablePet(
-                  pet: pet,
-                  selected: _selected.contains(pet.id),
-                  // A pet the petshop does not serve cannot be booked; the
-                  // server refuses it too.
-                  refusal: pet.serviceReason == null
-                      ? null
-                      : petServiceText(
-                          pet.serviceReason!,
-                          petName: pet.name,
-                          breed: pet.breedEntry,
-                          petshop: controller.companyName,
-                          tutor: true,
-                        ),
-                  onTap: () => setState(
-                    () => _selected.contains(pet.id)
-                        ? _selected.remove(pet.id)
-                        : _selected.add(pet.id),
+        // One under the other on the phone; two per row on wide windows, the
+        // cards of a row with the same height.
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = tutorWide(context) && constraints.maxWidth >= 560
+                ? 2
+                : 1;
+            return PetCardGrid(
+              columns: columns,
+              children: [
+                for (final pet in pets)
+                  AppTourTarget(
+                    id: TipTargets.bookingPet,
+                    child: _SelectablePet(
+                      pet: pet,
+                      fill: columns > 1,
+                      selected: _selected.contains(pet.id),
+                      // A pet the petshop does not serve cannot be booked; the
+                      // server refuses it too.
+                      refusal: pet.serviceReason == null
+                          ? null
+                          : petServiceText(
+                              pet.serviceReason!,
+                              petName: pet.name,
+                              breed: pet.breedEntry,
+                              petshop: controller.companyName,
+                              tutor: true,
+                            ),
+                      onTap: () => setState(
+                        () => _selected.contains(pet.id)
+                            ? _selected.remove(pet.id)
+                            : _selected.add(pet.id),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-          ],
+              ],
+            );
+          },
         ),
+        const SizedBox(height: 12),
         AppTourTarget(
           id: TipTargets.bookingOtherPet,
           child: TextButton.icon(
@@ -140,80 +151,32 @@ class _SelectablePet extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.refusal,
+    this.fill = false,
   });
   final Pet pet;
   final bool selected;
   final VoidCallback onTap;
+  final bool fill;
 
   /// Why the petshop does not serve the pet; then it cannot be chosen.
   final String? refusal;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: selected ? AppColors.mint : AppColors.paper,
-    shape: RoundedRectangleBorder(
-      borderRadius: AppRadii.r20,
-      side: BorderSide(
-        color: selected ? AppColors.primary : AppColors.line,
-        width: selected ? 1.5 : 1,
-      ),
-    ),
-    child: InkWell(
+  Widget build(BuildContext context) => Semantics(
+    selected: refusal == null ? selected : null,
+    child: PetCard(
+      pet: pet,
+      fill: fill,
+      selected: selected,
+      dimmed: refusal != null,
       onTap: refusal == null ? onTap : null,
-      borderRadius: AppRadii.r20,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Opacity(
-              opacity: refusal == null ? 1 : 0.45,
-              child: AppPetIcon(
-                icon: pet.breedIcon,
-                size: 52,
-                semanticLabel: pet.breed,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    pet.name,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Text('${pet.species} · ${pet.breed}'),
-                  if (refusal != null)
-                    Text(
-                      refusal!,
-                      style: const TextStyle(color: AppColors.warning),
-                    ),
-                ],
-              ),
-            ),
-            if (refusal == null)
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: selected ? AppColors.primary : Colors.transparent,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: selected ? AppColors.primary : AppColors.muted,
-                  ),
-                ),
-                child: selected
-                    ? const Icon(
-                        Icons.check_rounded,
-                        size: 18,
-                        color: Colors.white,
-                      )
-                    : null,
-              ),
-          ],
-        ),
-      ),
+      trailing: refusal == null ? PetCheck(selected: selected) : null,
+      notes: [
+        if (refusal != null) ...[
+          const SizedBox(height: 4),
+          Text(refusal!, style: const TextStyle(color: AppColors.warning)),
+        ],
+      ],
     ),
   );
 }

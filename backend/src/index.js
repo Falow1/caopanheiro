@@ -194,7 +194,7 @@ export { registerPushToken, unregisterPushToken } from './push_tokens.js';
 
 export { getTransportConflicts, getCompanyTransports, reassignTransport, manageTransportIncident, checkTransportPets } from './transport_operations.js';
 
-export {getTransportPolicy,saveTransportPolicy,searchTransportAddress,estimateTransportTrip,quoteTutorTransport,getTransportRequests,decideTransportRequest,getTutorTransportTracking,requestTutorTransport} from './transport_booking.js';
+export {getTransportPolicy,saveTransportPolicy,searchTransportAddress,reverseTransportAddress,estimateTransportTrip,quoteTutorTransport,getTransportRequests,decideTransportRequest,getTutorTransportTracking,requestTutorTransport} from './transport_booking.js';
 export { reportDriverLocation, getTransportLocation } from './driver_location.js';
 
 export { getManagerActivation, completeManagerActivation } from './manager_activation.js';
@@ -214,7 +214,7 @@ export { deleteOwnAccount, deleteManagerAccount } from './account_deletion.js';
 
 export { getCompanyView } from './company_view.js';
 
-export { saveTutorAccountProfile } from './tutor_account_profile.js';
+export { saveTutorAccountProfile, saveTutorAddress } from './tutor_account_profile.js';
 
 export { getNotices, markNoticesSeen } from './notices.js';
 

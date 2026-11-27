@@ -98,15 +98,25 @@ class AppointmentDetailScreen extends StatelessWidget {
                       value:
                           '${date(item.displayStartsAt)} às ${time(item.displayStartsAt)}',
                     ),
+                    // With pets of different professionals at the same time, the
+                    // booking is shorter than the summed time of the services.
                     _Line(
                       icon: Icons.schedule_rounded,
-                      label: 'Duração',
+                      label: item.reservedMinutes == item.duration
+                          ? 'Duração'
+                          : 'Duração somada dos serviços',
                       value: '${item.duration} minutos',
                     ),
+                    if (item.reservedMinutes != item.duration)
+                      _Line(
+                        icon: Icons.timelapse_rounded,
+                        label: 'Tempo previsto da reserva',
+                        value: '${item.reservedMinutes} minutos',
+                      ),
                     _Line(
                       icon: Icons.badge_outlined,
                       label: 'Profissional',
-                      value: item.professional ?? 'Ainda não definido',
+                      value: item.professionals ?? 'Ainda não definido',
                       last: true,
                     ),
                   ],
@@ -189,6 +199,14 @@ class AppointmentDetailScreen extends StatelessWidget {
                                         context,
                                       ).textTheme.titleMedium,
                                     ),
+                                    // The professional of this pet and the start.
+                                    if (entry.professional case final name?)
+                                      Text(
+                                        entry.companyStartsAt == null
+                                            ? name
+                                            : '$name · ${time(entry.companyStartsAt!)}',
+                                        style: AppTextStyles.caption,
+                                      ),
                                     if (controller.catalogOnly) ...[
                                       Text(
                                         'Situação: ${(entry.execution?.status ?? item.status).label}',

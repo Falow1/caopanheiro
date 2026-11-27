@@ -5,7 +5,7 @@ import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppScreenTips, AppTourTarget;
 import '../../core/screen_tips.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppDimensions, AppPetIcon, AppRadii;
+    show AppDimensions;
 
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_widgets.dart';
@@ -15,6 +15,7 @@ import '../appointments/history_screen.dart';
 import '../home/read_only_company.dart';
 import '../navigation/tutor_shell_scope.dart';
 import '../navigation/tutor_wide_layout.dart';
+import 'pet_card.dart';
 import 'pet_form_screen.dart';
 
 class PetsScreen extends StatelessWidget {
@@ -57,16 +58,17 @@ class PetsScreen extends StatelessWidget {
               children: [
                 title,
                 const SizedBox(height: 24),
-                ...pets.map(
-                  (pet) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: AppTourTarget(
-                      id: TipTargets.petsCard,
-                      child: _PetTile(pet: pet),
-                    ),
-                  ),
+                PetCardGrid(
+                  columns: 1,
+                  children: [
+                    for (final pet in pets)
+                      AppTourTarget(
+                        id: TipTargets.petsCard,
+                        child: _PetTile(pet: pet),
+                      ),
+                  ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 20),
                 AppTourTarget(
                   id: TipTargets.petsAdd,
                   child: OutlinedButton.icon(
@@ -112,25 +114,17 @@ class PetsScreen extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 24),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final width =
-                      (constraints.maxWidth - 16 * (columns - 1)) / columns;
-                  return Wrap(
-                    spacing: 16,
-                    runSpacing: 16,
-                    children: [
-                      for (final pet in pets)
-                        SizedBox(
-                          width: width,
-                          child: AppTourTarget(
-                            id: TipTargets.petsCard,
-                            child: _PetTile(pet: pet, margin: EdgeInsets.zero),
-                          ),
-                        ),
-                    ],
-                  );
-                },
+              // The cards of a row share the height, the history at the bottom.
+              PetCardGrid(
+                columns: columns,
+                gap: 16,
+                children: [
+                  for (final pet in pets)
+                    AppTourTarget(
+                      id: TipTargets.petsCard,
+                      child: _PetTile(pet: pet, fill: true),
+                    ),
+                ],
               ),
             ],
           ),
@@ -141,101 +135,73 @@ class PetsScreen extends StatelessWidget {
 }
 
 class _PetTile extends StatelessWidget {
-  const _PetTile({required this.pet, this.margin});
+  const _PetTile({required this.pet, this.fill = false});
   final Pet pet;
 
-  /// The grid of wide windows spaces the cards itself.
-  final EdgeInsets? margin;
+  /// In the grid of wide windows, the card takes the height of its row.
+  final bool fill;
 
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final reason = pet.serviceReason;
     final phone = controller.companyContactPhone;
-    return Card(
-      margin: margin,
-      child: InkWell(
-        borderRadius: AppRadii.r22,
-        onTap: () => controller.companyReadOnly
-            ? showReadOnlyCompany(context)
-            : Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => PetFormScreen(pet: pet)),
+    return PetCard(
+      pet: pet,
+      fill: fill,
+      onTap: () => controller.companyReadOnly
+          ? showReadOnlyCompany(context)
+          : Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PetFormScreen(pet: pet)),
+            ),
+      trailing: const Icon(
+        Icons.edit_outlined,
+        size: 20,
+        color: AppColors.muted,
+      ),
+      notes: [
+        if (pet.breedPending)
+          const Text(
+            'Toque para escolher a raça na lista.',
+            style: TextStyle(color: AppColors.muted),
+          ),
+        // Not served now: the message only, never the reason the team wrote
+        // for "Não atender este pet".
+        if (reason != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            petServiceText(
+              reason,
+              petName: pet.name,
+              breed: pet.breedEntry,
+              petshop: controller.companyName,
+              tutor: true,
+            ),
+            style: const TextStyle(color: AppColors.warning),
+          ),
+          if (phone.isNotEmpty)
+            Text(
+              'Telefone do petshop: $phone',
+              style: const TextStyle(color: AppColors.warning),
+            ),
+        ],
+      ],
+      // The visits of this pet only, apart from the full history.
+      footer: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            key: ValueKey('pet-history-${pet.id}'),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => HistoryScreen(petId: pet.id, petName: pet.name),
               ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  // The icon of the breed; the paw of the brand when unknown.
-                  AppPetIcon(
-                    icon: pet.breedIcon,
-                    size: 62,
-                    semanticLabel: pet.breed,
-                  ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          pet.name,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 4),
-                        Text('${pet.species} · ${pet.breed}'),
-                        if (pet.breedPending)
-                          const Text(
-                            'Toque para escolher a raça na lista.',
-                            style: TextStyle(color: AppColors.muted),
-                          ),
-                        // Not served now: the message only, never the reason the
-                        // team wrote for "Não atender este pet".
-                        if (reason != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            petServiceText(
-                              reason,
-                              petName: pet.name,
-                              breed: pet.breedEntry,
-                              petshop: controller.companyName,
-                              tutor: true,
-                            ),
-                            style: const TextStyle(color: AppColors.warning),
-                          ),
-                          if (phone.isNotEmpty)
-                            Text(
-                              'Telefone do petshop: $phone',
-                              style: const TextStyle(color: AppColors.warning),
-                            ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.edit_outlined,
-                    size: 20,
-                    color: AppColors.muted,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              // The visits of this pet only, apart from the full history.
-              TextButton.icon(
-                key: ValueKey('pet-history-${pet.id}'),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        HistoryScreen(petId: pet.id, petName: pet.name),
-                  ),
-                ),
-                icon: const Icon(Icons.history_rounded),
-                label: Text('Histórico de ${pet.name}'),
-              ),
-            ],
+            ),
+            icon: const Icon(Icons.history_rounded),
+            label: Text('Histórico de ${pet.name}'),
           ),
         ),
       ),

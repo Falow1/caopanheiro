@@ -26,7 +26,20 @@ class Appointment {
     this.notes = '',
     this.tutorNotes = '',
     this.observations = const [],
+    this.scheduleMinutes,
   });
+
+  /// Real time of the booking: the busiest professional, with pets of
+  /// different professionals done at the same time. [duration] stays the
+  /// summed time of the services.
+  final int? scheduleMinutes;
+  int get reservedMinutes => scheduleMinutes ?? duration;
+
+  /// Names of the professionals of the pets, or of the appointment.
+  String? get professionals {
+    final names = {for (final item in items) ?item.professional};
+    return names.isEmpty ? professional : names.join(', ');
+  }
 
   /// Professional notes about the service; read-only for management.
   final List<ServiceNote> observations;
@@ -61,5 +74,6 @@ class Appointment {
         notes: notes ?? this.notes,
         tutorNotes: tutorNotes,
         observations: observations,
+        scheduleMinutes: scheduleMinutes,
       );
 }

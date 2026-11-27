@@ -47,6 +47,31 @@ export const searchTransportAddress=onCall({...options,maxInstances:1,concurrenc
  object(request.data,['tenantId','query'],'Busca');const{db}=await authorized(request,['MANAGER','ATTENDANT','TUTOR']);const query=text(request.data.query,'Endereço',300,5);
  try{return await searchPlaces(db,query);}catch{throw new HttpsError('unavailable','Busca de endereço indisponível. Tente novamente ou marque o ponto no mapa.');}
 });
+// The point marked on the map or read from the device, turned back into the
+// street and the district when the map service knows them. Rounded to about
+// 11 m, in the same queue and cache of the search; the tutor checks the
+// number and the complement.
+async function reversePlace(db,at){
+ const lat=Math.round(at.lat*1e4)/1e4,lng=Math.round(at.lng*1e4)/1e4,ref=db.doc(`mapSearchCache/${digest(`reverse:${lat},${lng}`)}`),cached=await ref.get();if(cached.exists&&cached.get('expiresAt').toMillis()>Date.now())return{place:cached.get('place')};
+ const task=searchQueue.then(async()=>{const wait=1100-(Date.now()-lastSearch);if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));lastSearch=Date.now();
+  const endpoint=process.env.TRANSPORT_REVERSE_URL??(process.env.TRANSPORT_GEOCODER_URL?process.env.TRANSPORT_GEOCODER_URL.replace(/\/search\/?$/,'/reverse'):'https://nominatim.openstreetmap.org/reverse');const url=new URL(endpoint);url.search=new URLSearchParams({lat:String(lat),lon:String(lng),format:'jsonv2',zoom:'18',addressdetails:'1'}).toString();
+  const response=await fetch(url,{headers:{'User-Agent':'CaopanheiroLocal/42 (https://github.com/ho-Rafa/petshop-ecosystem)','Accept-Language':'pt-BR'},signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('Geocoder unavailable');
+  const value=await response.json();const place=reversedPlace(value);await ref.set({place,expiresAt:Timestamp.fromMillis(Date.now()+86400000),purgeAt:purgeAt(retention.mapCache)});return{place};
+ });searchQueue=task.catch(()=>{});return task;
+}
+/** Street ("Rua, número, cidade") and district ("Bairro, cidade") of a reverse
+ * answer of Nominatim; null when it has no street. */
+export function reversedPlace(value){
+ const a=value&&typeof value.address==='object'&&value.address?value.address:null;if(!a)return null;
+ const clip=(v,n)=>typeof v==='string'?v.trim().slice(0,n):'';
+ const city=clip(a.city??a.town??a.village??a.municipality,80),road=clip(a.road??a.pedestrian??a.residential,150),number=clip(a.house_number,20),district=clip(a.suburb??a.neighbourhood??a.quarter??a.city_district,80);
+ if(!road)return null;
+ return{street:[road,number,city].filter(Boolean).join(', '),district:[district,city].filter(Boolean).join(', '),label:clip(value.display_name,500)};
+}
+export const reverseTransportAddress=onCall({...options,maxInstances:1,concurrency:1},async request=>{
+ object(request.data,['tenantId','point'],'Endereço');const{db}=await authorized(request,['MANAGER','ATTENDANT','TUTOR']);const at=point(request.data.point);
+ try{return await reversePlace(db,at);}catch{throw new HttpsError('unavailable','Não foi possível achar o endereço deste ponto. Escreva a rua e o número.');}
+});
 // The route by the streets: meters and the driving minutes, never a straight line.
 export async function roadRoute(origin,destination,fetcher=fetch){
  const base=process.env.TRANSPORT_ROUTER_URL??'https://router.project-osrm.org';

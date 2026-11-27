@@ -13,6 +13,7 @@ import '../domain/repositories/tutor_extras_repository.dart';
 import '../domain/repositories/tutor_pet_policy.dart';
 import '../domain/repositories/tutor_transport_repository.dart';
 import '../domain/repositories/tutor_session.dart';
+import '../domain/repositories/tutor_address_repository.dart';
 
 Map<String, dynamic> _map(dynamic value) =>
     Map<String, dynamic>.from(value as Map);
@@ -30,7 +31,8 @@ class FirebasePetshopRepository
         ScreenTipsRepository,
         LiveSignalsAware,
         NetworkProblemSource,
-        LoginCodeRepository {
+        LoginCodeRepository,
+        TutorAddressRepository {
   FirebasePetshopRepository(this._gateway);
 
   @override
@@ -415,6 +417,8 @@ class FirebasePetshopRepository
         ? null
         : DateTime.parse(v['localStartsAt'] as String),
     professionalId: v['professionalId'] as String?,
+    distribution: v['distribution'] as String?,
+    scheduleMinutes: (v['scheduleMinutes'] as num?)?.toInt(),
     transport: v['transport'] == null ? null : _map(v['transport']),
     tutorNotes: v['tutorNotes'] as String? ?? '',
     observations: ((v['observations'] as List?) ?? const []).map((item) {
@@ -449,6 +453,9 @@ class FirebasePetshopRepository
           0,
           (total, s) => total + (s['durationMinutes'] as int),
         ),
+        professionalName: i['professional'] as String?,
+        startsAt: DateTime.tryParse(i['startsAt'] as String? ?? '')?.toLocal(),
+        endsAt: DateTime.tryParse(i['endsAt'] as String? ?? '')?.toLocal(),
       );
     }).toList(),
     history: ((v['history'] as List?) ?? []).map((item) {
@@ -530,7 +537,13 @@ class FirebasePetshopRepository
       'expectedDurationMinutes': appointment.totalDuration,
       'expectedServices': appointment.expectedServices,
       'startsAt': appointment.startsAt.toUtc().toIso8601String(),
-      'professionalId': appointment.professionalId,
+      // With a distribution the professional goes per pet, never for all.
+      if (appointment.distribution == null)
+        'professionalId': appointment.professionalId
+      else ...{
+        'distribution': appointment.distribution,
+        'assignments': ?appointment.assignments,
+      },
       'items': appointment.items
           .map((item) => {'petId': item.petId, 'serviceIds': item.serviceIds})
           .toList(),
@@ -553,8 +566,9 @@ class FirebasePetshopRepository
   @override
   Future<List<TutorSlot>> availableSlots(
     String day,
-    List<Map<String, dynamic>> items,
-  ) async {
+    List<Map<String, dynamic>> items, {
+    String? distribution,
+  }) async {
     final epoch = _epoch;
     final uid = _gateway.uid;
     final tenant = _selected;
@@ -563,18 +577,40 @@ class FirebasePetshopRepository
       'customerId': _customerId,
       'day': day,
       'items': items,
+      'distribution': ?distribution,
     });
     _check(epoch, uid, tenant);
-    return (response['slots'] as List).map((item) {
-      final v = _map(item);
-      return TutorSlot(
-        startsAt: DateTime.parse(v['startsAt'] as String),
-        label: v['label'] as String,
-        professionalId: v['professionalId'] as String,
-        professionalName: v['professionalName'] as String,
-      );
-    }).toList();
+    return (response['slots'] as List)
+        .map((item) => _slot(_map(item)))
+        .toList();
   }
+
+  TutorSlot _slot(Map<String, dynamic> v) => TutorSlot(
+    startsAt: DateTime.parse(v['startsAt'] as String),
+    label: v['label'] as String,
+    professionalId: v['professionalId'] as String,
+    professionalName: v['professionalName'] as String,
+    endsAt: v['endsAt'] == null ? null : DateTime.parse(v['endsAt'] as String),
+    minutes: (v['minutes'] as num?)?.toInt(),
+    assignments: ((v['assignments'] as List?) ?? const []).map((raw) {
+      final a = _map(raw);
+      return SlotAssignment(
+        petId: a['petId'] as String,
+        professionalId: a['professionalId'] as String,
+        professionalName: a['professionalName'] as String? ?? 'Profissional',
+        startsAt: DateTime.parse(a['startsAt'] as String),
+        endsAt: DateTime.parse(a['endsAt'] as String),
+      );
+    }).toList(),
+    professionals: ((v['professionals'] as List?) ?? const []).map((raw) {
+      final p = _map(raw);
+      return SlotProfessional(
+        p['id'] as String,
+        p['name'] as String? ?? 'Profissional',
+        (p['freeMinutes'] as num).toInt(),
+      );
+    }).toList(),
+  );
 
   Future<Map<String, dynamic>> _transportQuery(
     String name,
@@ -641,23 +677,47 @@ class FirebasePetshopRepository
   Future<List<TutorSlot>> rescheduleSlots(
     String day,
     List<Map<String, dynamic>> items,
-    String appointmentId,
-  ) async {
+    String appointmentId, {
+    String? distribution,
+  }) async {
     final response = await _transportQuery('getAvailableSlots', {
+      'distribution': ?distribution,
       'customerId': _customerId,
       'day': day,
       'items': items,
       'appointmentId': appointmentId,
     });
-    return (response['slots'] as List).map((item) {
-      final v = _map(item);
-      return TutorSlot(
-        startsAt: DateTime.parse(v['startsAt'] as String),
-        label: v['label'] as String,
-        professionalId: v['professionalId'] as String,
-        professionalName: v['professionalName'] as String,
-      );
-    }).toList();
+    return (response['slots'] as List)
+        .map((item) => _slot(_map(item)))
+        .toList();
+  }
+
+  @override
+  TutorAddress? get savedAddress => TutorAddress.fromJson(_profile?['address']);
+
+  @override
+  Future<TutorAddress?> saveAddress(TutorAddress? address) async {
+    final epoch = _epoch, uid = _gateway.uid, selected = _selected;
+    final response = await _gateway.call('saveTutorAddress', {
+      'address': address?.toJson(),
+    });
+    _check(epoch, uid, selected);
+    final saved = TutorAddress.fromJson(response['address']);
+    _profile = {...?_profile, 'address': saved?.toJson()};
+    return saved;
+  }
+
+  @override
+  Future<ReversedAddress?> reverseAddress(double lat, double lng) async {
+    final result = await _transportQuery('reverseTransportAddress', {
+      'point': {'lat': lat, 'lng': lng},
+    });
+    final place = result['place'];
+    if (place is! Map) return null;
+    return ReversedAddress(
+      street: place['street'] as String? ?? '',
+      district: place['district'] as String? ?? '',
+    );
   }
 
   @override

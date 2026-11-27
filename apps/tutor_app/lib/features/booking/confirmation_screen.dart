@@ -13,6 +13,7 @@ import 'application/create_appointment.dart';
 import '../../state/app_scope.dart';
 import '../navigation/tutor_shell_scope.dart';
 import '../navigation/tutor_wide_layout.dart';
+import '../../domain/repositories/tutor_session.dart' show Distribution;
 import 'booking_draft.dart';
 import 'success_screen.dart';
 import 'widgets/booking_frame.dart';
@@ -123,6 +124,10 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
     child: _content(context),
   );
 
+  bool get _concurrent =>
+      draft.scheduleMinutes != null &&
+      draft.scheduleMinutes != draft.totalDuration;
+
   Widget _content(BuildContext context) {
     final controller = AppScope.of(context);
     final at = draft.companyStartsAt ?? draft.startsAt;
@@ -142,8 +147,12 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
         pets: draft.pets,
         services: draft.selectedServices,
         when: at == null ? null : BookingSummary.day(at, formatTime(at)),
-        professional: draft.professionalName ?? 'Qualquer profissional',
+        professional: draft.professionalLabel,
         showProfessional: controller.integrated,
+        petProfessionals: controller.integrated && draft.pets.length > 1
+            ? draft.petProfessionals
+            : null,
+        reservedMinutes: draft.scheduleMinutes,
         transport: quote == null ? null : BookingSummary.transportLine(quote),
         transportCents: quote == null
             ? 0
@@ -197,9 +206,9 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
                     _SummaryLine(
                       icon: Icons.person_outline_rounded,
                       label: 'Profissional',
-                      value:
-                          draft.professionalName ??
-                          'Qualquer profissional disponível',
+                      value: draft.distribution == Distribution.any
+                          ? 'Qualquer profissional disponível'
+                          : draft.professionalLabel,
                     ),
                   ],
                   const Divider(height: 32),
@@ -227,6 +236,19 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
                                       .map((service) => service.name)
                                       .join(' · '),
                                 ),
+                                if (draft.pets.length > 1 &&
+                                    AppScope.of(context).integrated)
+                                  if (draft.petProfessionals[pet.id]
+                                      case final line?)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 3),
+                                      child: Text(
+                                        draft.distribution == Distribution.any
+                                            ? 'Previsto: $line'
+                                            : line,
+                                        style: AppTextStyles.strong,
+                                      ),
+                                    ),
                               ],
                             ),
                           ),
@@ -237,9 +259,20 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
                   const Divider(height: 20),
                   _SummaryLine(
                     icon: Icons.schedule_rounded,
-                    label: 'Tempo estimado',
+                    label: _concurrent
+                        ? 'Duração somada dos serviços'
+                        : 'Tempo estimado',
                     value: '${draft.totalDuration} minutos',
                   ),
+                  // Pets with different professionals are done at the same time.
+                  if (_concurrent) ...[
+                    const SizedBox(height: 16),
+                    _SummaryLine(
+                      icon: Icons.timelapse_rounded,
+                      label: 'Tempo previsto da reserva',
+                      value: '${draft.scheduleMinutes} minutos',
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   _SummaryLine(
                     icon: Icons.payments_outlined,

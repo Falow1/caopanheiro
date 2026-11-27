@@ -4,7 +4,8 @@ import { allocateRecordNumbers, petNumberId } from './record_numbers.js';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { onCall } from './callable.js';
 import { getAuth } from 'firebase-admin/auth';
-import { FieldPath } from 'firebase-admin/firestore';
+import { FieldPath, Filter } from 'firebase-admin/firestore';
+import { assignedTo } from './distribution.js';
 import { actor, email, identifier, invalid, localBackend, object, options, teamAccess, text, tenantEnabled } from './runtime.js';
 import { brazilPhone } from './contact_policy.js';
 import { metadata, teamCommand } from './team_commands.js';
@@ -61,7 +62,7 @@ export const getApplicationContext=onCall(options,async(request)=>{
     throw new HttpsError('permission-denied','Sua conta não possui vínculo ativo neste aplicativo.');
   }
   companies.sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));unavailableCompanies.sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
-  return {uid,profile:{id:uid,name:ownProfile.get('name')??user.displayName??'',email:user.email??'',phone:ownProfile.get('phone')??user.phoneNumber??''},companies,unavailableCompanies,principalManager,screenTips:screenTips(ownProfile)};
+  return {uid,profile:{id:uid,name:ownProfile.get('name')??user.displayName??'',email:user.email??'',phone:ownProfile.get('phone')??user.phoneNumber??'',...(role==='TUTOR'&&ownProfile.get('tutorAddress')?{address:ownProfile.get('tutorAddress')}:{})},companies,unavailableCompanies,principalManager,screenTips:screenTips(ownProfile)};
 });
 
 /// Tutor view: professional observations travel without the author's UID,
@@ -70,9 +71,15 @@ export function tutorAppointment(doc){
   const value=tutorView(jsonAppointment(doc));
   return{...value,observations:value.observations??[]};
 }
-export function professionalRows(doc){
+/// Appointments with at least one pet of the professional: the professional
+/// of the appointment (also the only one of older appointments) or of a pet.
+export function professionalAppointments(query,uid){
+  return query.where(Filter.or(Filter.where('professionalUid','==',uid),Filter.where('professionalUids','array-contains',uid)));
+}
+/// One row per pet of [uid], at the start of that pet.
+export function professionalRows(doc,uid){
   const value=jsonAppointment(doc);
-  return value.items.map((item)=>({id:`${doc.id.length}:${doc.id}${item.pet.id}`,appointmentId:doc.id,recordNumber:value.recordNumber??null,startsAt:value.startsAt,localStartsAt:value.localStartsAt??null,
+  return value.items.filter((item)=>assignedTo(value,uid,item.pet.id)).map((item)=>({id:`${doc.id.length}:${doc.id}${item.pet.id}`,appointmentId:doc.id,recordNumber:value.recordNumber??null,startsAt:item.startsAt??value.startsAt,localStartsAt:item.localStartsAt??value.localStartsAt??null,
     status:item.execution.status,execution:item.execution,appointmentStatus:value.status,notes:value.notes??'',tutorNotes:value.tutorNotes??'',tutorName:value.customer.name,pet:item.pet,services:item.services,
     observations:(value.observations??[]).filter((observation)=>observation.petId===item.pet.id).map(({text,createdAt})=>({text,createdAt}))}));
 }
@@ -103,12 +110,12 @@ export const getProfileData=onCall(options,async(request)=>{
       if(!await tutorOwnsCustomer(tx,db,tenantId,uid,access,tutorCustomerId))throw new HttpsError('permission-denied','Cadastro não vinculado a esta conta.');
       query=query.where('customerId','==',tutorCustomerId);
     }
-    if(role==='PROFESSIONAL')query=query.where('professionalUid','==',uid);
+    if(role==='PROFESSIONAL')query=professionalAppointments(query,uid);
     if(role==='DRIVER')query=query.where('driverUid','==',uid);
     if(resource==='services')query=query.where('active','==',true);
     query=query.orderBy(FieldPath.documentId()).limit(50);if(cursor)query=query.startAfter(cursor);
     const page=await tx.get(query);let items;
-    if(role==='PROFESSIONAL')items=page.docs.flatMap(professionalRows);
+    if(role==='PROFESSIONAL')items=page.docs.flatMap((doc)=>professionalRows(doc,uid));
     else if(role==='TUTOR'&&resource==='appointments')items=page.docs.filter((doc)=>doc.get('customerId')===tutorCustomerId).map(tutorAppointment);
     else items=page.docs.map((doc)=>({id:doc.id,...doc.data(),createdAt:null,updatedAt:null}));
     if(role==='DRIVER'){const refs=[...new Set(items.map(job=>job.appointmentId))].map(id=>db.doc(`tenants/${tenantId}/appointments/${id}`));const appointments=refs.length?await tx.getAll(...refs):[];const byId=new Map(appointments.map(doc=>[doc.id,doc.data()??{}]));items=items.map(job=>({...job,pets:returnReadiness(byId.get(job.appointmentId)??{},job.pets??[])}));}
@@ -121,7 +128,7 @@ export const addServiceObservation=onCall(options,async(request)=>{
   const appointmentId=identifier(request.data.appointmentId,'Agendamento');const petId=identifier(request.data.petId,'Pet');const value=text(request.data.text,'Observação',2000,1);
   return teamCommand(request,'addServiceObservation',{appointmentId,petId,text:value},async({db,tx,tenantId,uid})=>{
     const ref=db.doc(`tenants/${tenantId}/appointments/${appointmentId}`);const previous=await tx.get(ref);
-    if(!previous.exists||previous.get('professionalUid')!==uid)throw new HttpsError('permission-denied','Atendimento não atribuído a você.');
+    if(!previous.exists||!assignedTo(previous.data(),uid,petId))throw new HttpsError('permission-denied','Atendimento não atribuído a você.');
     if(!executionItems(previous.data()).some(item=>item.pet.id===petId&&['PET_RECEIVED','IN_PROGRESS'].includes(item.execution.status)))throw new HttpsError('failed-precondition','Observação indisponível para este atendimento.');
     const observations=previous.get('observations')??[];if(observations.length>=100)invalid('Limite de observações do atendimento atingido.');
     const updated=[...observations,{petId,text:value,createdAt:new Date().toISOString(),authorUid:uid}];tx.update(ref,{observations:updated,...metadata(uid,true)});

@@ -93,7 +93,7 @@ class AppointmentDetailScreen extends StatelessWidget {
                   ).textTheme.titleLarge?.copyWith(color: Colors.white),
                 ),
                 Text(
-                  '${formatTime(appointment.displayStartsAt)} · ${appointment.totalDuration} min',
+                  '${formatTime(appointment.displayStartsAt)} · ${appointment.reservedMinutes} min',
                   style: AppTextStyles.onDarkSecondary,
                 ),
               ],
@@ -115,6 +115,16 @@ class AppointmentDetailScreen extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(item.serviceNames.join(' · ')),
+              // Who does this pet and when, on the clock of the petshop.
+              if (item.professionalName case final name?) ...[
+                const SizedBox(height: 6),
+                Text(
+                  item.startsAt == null
+                      ? name
+                      : '$name · ${formatTime(appointment.displayStartsAt.add(item.startsAt!.difference(appointment.startsAt)))}',
+                  style: AppTextStyles.strong,
+                ),
+              ],
               const SizedBox(height: 6),
               StatusChip(status: item.execution?.status ?? appointment.status),
               for (final note in appointment.observations.where(

@@ -130,6 +130,7 @@ Appointment appointmentFromJson(Map<String, dynamic> value) => Appointment(
   status: AppointmentStatus.fromApi(value['status'] as String),
   professional: value['professional'] as String?,
   professionalId: value['professionalId'] as String?,
+  scheduleMinutes: (value['scheduleMinutes'] as num?)?.toInt(),
   notes: value['notes'] as String? ?? '',
   tutorNotes: value['tutorNotes'] as String? ?? '',
   observations: ((value['observations'] as List?) ?? const []).map((raw) {
@@ -151,6 +152,12 @@ Appointment appointmentFromJson(Map<String, dynamic> value) => Appointment(
       services: (item['services'] as List)
           .map((service) => serviceFromJson(jsonMap(service)))
           .toList(),
+      professional: item['professional'] as String?,
+      professionalId: item['professionalId'] as String?,
+      startsAt: DateTime.tryParse(item['startsAt'] as String? ?? '')?.toLocal(),
+      companyStartsAt: DateTime.tryParse(
+        item['localStartsAt'] as String? ?? '',
+      ),
     );
   }).toList(),
 );
@@ -164,6 +171,7 @@ Map<String, dynamic> appointmentToJson(Appointment value) => {
   'status': value.status.apiValue,
   'professional': value.professional,
   'professionalId': value.professionalId,
+  if (value.scheduleMinutes != null) 'scheduleMinutes': value.scheduleMinutes,
   'notes': value.notes,
   'tutorNotes': value.tutorNotes,
   'observations': value.observations
@@ -182,6 +190,13 @@ Map<String, dynamic> appointmentToJson(Appointment value) => {
           'pet': petToJson(item.pet),
           if (item.execution != null) 'execution': item.execution!.toJson(),
           'services': item.services.map(serviceToJson).toList(),
+          if (item.professional != null) 'professional': item.professional,
+          if (item.professionalId != null)
+            'professionalId': item.professionalId,
+          if (item.startsAt != null)
+            'startsAt': item.startsAt!.toUtc().toIso8601String(),
+          if (item.companyStartsAt != null)
+            'localStartsAt': item.companyStartsAt!.toIso8601String(),
         },
       )
       .toList(),

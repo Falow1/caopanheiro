@@ -76,6 +76,13 @@ class ProfileScreen extends StatelessWidget {
           label: 'E-mail',
           value: tutor.email,
         ),
+        // The address of the account for the transport, when it is kept.
+        if (controller.addressAvailable)
+          _InfoTile(
+            icon: Icons.home_outlined,
+            label: 'Endereço para o transporte',
+            value: controller.savedAddress?.label ?? 'Nenhum endereço guardado',
+          ),
         // On two columns the card grows to the height of the other column
         // and the button stays at its foot.
         if (two) const Spacer(),

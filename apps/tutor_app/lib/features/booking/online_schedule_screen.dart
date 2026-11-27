@@ -36,11 +36,16 @@ class _Professional {
   final String name;
 }
 
+/// How the tutor wants the professionals: the server distributes the pets
+/// ([any]), one professional does them all ([one]) or one per pet ([perPet]).
+enum _Mode { any, one, perPet }
+
 /// One start time; several professionals may offer the same instant.
 class _TimeOption {
-  _TimeOption(this.label, this.startsAt);
+  _TimeOption(this.label, this.slot);
   final String label;
-  final DateTime startsAt;
+  final TutorSlot slot;
+  DateTime get startsAt => slot.startsAt;
   int get hour => int.parse(label.split(':').first);
 }
 
@@ -56,8 +61,11 @@ class _OnlineScheduleScreenState extends State<OnlineScheduleScreen> {
   );
   List<TutorSlot> _slots = [];
   String? _time;
-  // null means any professional; the server picks one free at confirmation.
+  _Mode _mode = _Mode.any;
+  // The professional of every pet in [_Mode.one].
   _Professional? _professional;
+  // The professional of each pet in [_Mode.perPet], at the chosen time.
+  Map<String, String> _assignments = {};
   bool _loading = false;
   String? _error;
   int _request = 0;
@@ -66,6 +74,10 @@ class _OnlineScheduleScreenState extends State<OnlineScheduleScreen> {
       DateTime(value.year, value.month, value.day);
   String get _date =>
       '${_day.year.toString().padLeft(4, '0')}-${_day.month.toString().padLeft(2, '0')}-${_day.day.toString().padLeft(2, '0')}';
+
+  BookingDraft get _draft => widget.draft;
+  bool get _severalPets => _draft.pets.length > 1;
+  int get _total => _draft.totalDuration;
 
   @override
   void initState() {
@@ -83,26 +95,33 @@ class _OnlineScheduleScreenState extends State<OnlineScheduleScreen> {
     });
     try {
       final controller = AppScope.of(context);
-      if (controller.companyId != widget.draft.companyId) {
+      if (controller.companyId != _draft.companyId) {
         throw const FormatException('A empresa mudou. Reinicie o agendamento.');
       }
-      final items = widget.draft.pets
+      final items = _draft.pets
           .map(
             (pet) => {
               'petId': pet.id,
-              'serviceIds': widget.draft.selectedServices[pet.id]!
+              'serviceIds': _draft.selectedServices[pet.id]!
                   .map((service) => service.id)
                   .toList(),
             },
           )
           .toList();
-      final slots = widget.draft.reschedule
+      // SPECIFIC brings the automatic distribution of each time and who is
+      // free to be chosen, so every choice of this page reads one answer.
+      final slots = _draft.reschedule
           ? await controller.rescheduleSlots(
               _date,
               items,
-              widget.draft.appointmentId,
+              _draft.appointmentId,
+              distribution: Distribution.specific,
             )
-          : await controller.availableSlots(_date, items);
+          : await controller.availableSlots(
+              _date,
+              items,
+              distribution: Distribution.specific,
+            );
       if (mounted && request == _request) setState(() => _slots = slots);
     } catch (error) {
       if (mounted && request == _request) {
@@ -137,62 +156,208 @@ class _OnlineScheduleScreenState extends State<OnlineScheduleScreen> {
     await _selectDay(_dateOnly(date));
   }
 
-  /// Professionals with free times on the day, plus the chosen one so the
-  /// preference stays visible when that person has no time on another day.
+  /// Free professionals of a slot, with their free minutes. A slot without
+  /// the list (one professional per slot) offers its own professional.
+  List<SlotProfessional> _free(TutorSlot slot) => slot.professionals.isNotEmpty
+      ? slot.professionals
+      : [SlotProfessional(slot.professionalId, slot.professionalName, _total)];
+
+  /// Professionals free on the day, plus the chosen one so the preference
+  /// stays visible when that person has no time on another day.
   List<_Professional> get _professionals {
     final byId = <String, _Professional>{
       for (final slot in _slots)
-        slot.professionalId: _Professional(
-          slot.professionalId,
-          slot.professionalName,
-        ),
+        for (final value in _free(slot))
+          value.id: _Professional(value.id, value.name),
     };
     final chosen = _professional;
     if (chosen != null) byId.putIfAbsent(chosen.id, () => chosen);
     return byId.values.toList()..sort((a, b) => a.name.compareTo(b.name));
   }
 
+  /// Whether [id] has time for every pet, one after the other, at [slot].
+  bool _takesAll(TutorSlot slot, String id) =>
+      _free(slot).any((value) => value.id == id && value.freeMinutes >= _total);
+
   List<_TimeOption> get _times {
     final byLabel = <String, _TimeOption>{};
     for (final slot in _slots) {
-      if (_professional != null && slot.professionalId != _professional!.id) {
-        continue;
-      }
-      byLabel.putIfAbsent(
-        slot.label,
-        () => _TimeOption(slot.label, slot.startsAt),
-      );
+      if (_mode == _Mode.one && !_takesAll(slot, _professional!.id)) continue;
+      byLabel.putIfAbsent(slot.label, () => _TimeOption(slot.label, slot));
     }
     return byLabel.values.toList()..sort((a, b) => a.label.compareTo(b.label));
   }
 
-  void _chooseProfessional(_Professional? professional) {
+  _TimeOption? get _selected =>
+      _times.where((item) => item.label == _time).firstOrNull;
+
+  void _chooseMode(_Mode mode, [_Professional? professional]) {
     if (_loading) return;
     setState(() {
+      _mode = mode;
       _professional = professional;
-      if (!_times.any((time) => time.label == _time)) _time = null;
+      if (_selected == null) _time = null;
+      _prefill();
     });
   }
 
+  void _chooseTime(String label) => setState(() {
+    _time = label;
+    _prefill();
+  });
+
+  /// The choice per pet at a new time: the previous choice when it still
+  /// fits, otherwise the distribution the server proposed.
+  void _prefill() {
+    final slot = _selected?.slot;
+    if (_mode != _Mode.perPet || slot == null) return;
+    final keep = _draft.pets.every(
+      (pet) => _options(slot, pet.id).any((p) => p.id == _assignments[pet.id]),
+    );
+    if (keep && _overloaded(slot, _assignments).isEmpty) return;
+    final automatic = {
+      for (final row in slot.assignments) row.petId: row.professionalId,
+    };
+    _assignments = {
+      for (final pet in _draft.pets)
+        pet.id: automatic[pet.id] ?? slot.professionalId,
+    };
+  }
+
+  /// Professionals that can do this pet at [slot]: free for its minutes.
+  List<SlotProfessional> _options(TutorSlot slot, String petId) {
+    final minutes = _draft.petMinutes(petId);
+    return _free(slot).where((value) => value.freeMinutes >= minutes).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  /// Professionals of [assignments] without time for their pets at [slot].
+  List<SlotProfessional> _overloaded(
+    TutorSlot slot,
+    Map<String, String> assignments,
+  ) {
+    final loads = <String, int>{};
+    for (final pet in _draft.pets) {
+      final id = assignments[pet.id];
+      if (id != null) loads[id] = (loads[id] ?? 0) + _draft.petMinutes(pet.id);
+    }
+    return [
+      for (final value in _free(slot))
+        if ((loads[value.id] ?? 0) > value.freeMinutes) value,
+      for (final id in loads.keys)
+        if (!_free(slot).any((value) => value.id == id))
+          SlotProfessional(id, 'Profissional', 0),
+    ];
+  }
+
+  /// Who does each pet at [slot] in the current mode: the server's proposal
+  /// in [_Mode.any]; otherwise the pets of each professional in a row.
+  List<SlotAssignment> _plan(TutorSlot slot) {
+    if (_mode == _Mode.any) {
+      if (slot.assignments.isNotEmpty) return slot.assignments;
+      return _sequence(slot, {
+        for (final pet in _draft.pets) pet.id: slot.professionalId,
+      });
+    }
+    final chosen = _mode == _Mode.one
+        ? {for (final pet in _draft.pets) pet.id: _professional!.id}
+        : _assignments;
+    return _sequence(slot, chosen);
+  }
+
+  List<SlotAssignment> _sequence(TutorSlot slot, Map<String, String> chosen) {
+    final names = {for (final value in _free(slot)) value.id: value.name};
+    final next = <String, DateTime>{};
+    return [
+      for (final pet in _draft.pets)
+        if (chosen[pet.id] case final id?)
+          () {
+            final from = next[id] ?? slot.startsAt;
+            final to = from.add(Duration(minutes: _draft.petMinutes(pet.id)));
+            next[id] = to;
+            return SlotAssignment(
+              petId: pet.id,
+              professionalId: id,
+              professionalName: names[id] ?? _professional?.name ?? '',
+              startsAt: from,
+              endsAt: to,
+            );
+          }(),
+    ];
+  }
+
+  int _minutesOf(TutorSlot slot, List<SlotAssignment> plan) => plan.isEmpty
+      ? _total
+      : plan
+            .map((row) => row.endsAt.difference(slot.startsAt).inMinutes)
+            .reduce((a, b) => a > b ? a : b);
+
+  /// Why the choice per pet cannot be confirmed; null when it fits.
+  String? _problem(TutorSlot slot) {
+    if (_mode != _Mode.perPet) return null;
+    if (_draft.pets.any((pet) => _assignments[pet.id] == null)) {
+      return 'Escolha o profissional de cada pet.';
+    }
+    final busy = _overloaded(slot, _assignments);
+    if (busy.isEmpty) return null;
+    final first = busy.first;
+    final pets = _draft.pets
+        .where((pet) => _assignments[pet.id] == first.id)
+        .map((pet) => pet.name)
+        .toList();
+    final minutes = _draft.pets
+        .where((pet) => _assignments[pet.id] == first.id)
+        .fold(0, (sum, pet) => sum + _draft.petMinutes(pet.id));
+    return '${first.name} não tem tempo para ${_names(pets)} neste horário: '
+        'são $minutes min de serviços e há ${first.freeMinutes} min livres. '
+        'Escolha profissionais diferentes ou troque o horário.';
+  }
+
+  static String _names(List<String> names) => names.length < 2
+      ? names.join()
+      : '${names.sublist(0, names.length - 1).join(', ')} e ${names.last}';
+
+  String _label(_TimeOption? selected) {
+    if (_mode == _Mode.any) return 'Qualquer profissional';
+    if (_mode == _Mode.one) return _professional!.name;
+    final slot = selected?.slot;
+    if (slot == null) return 'Escolha por pet';
+    return {for (final row in _plan(slot)) row.professionalName}.join(', ');
+  }
+
   void _continue() {
-    final time = _times.where((item) => item.label == _time).firstOrNull;
-    if (time == null) return;
-    widget.draft.startsAt = time.startsAt;
-    widget.draft.professionalId = _professional?.id;
-    widget.draft.professionalName = _professional?.name;
-    widget.draft.companyStartsAt = DateTime.parse('${_date}T${time.label}:00');
+    final selected = _selected;
+    if (selected == null || _problem(selected.slot) != null) return;
+    final slot = selected.slot, plan = _plan(slot);
+    final single = {for (final row in plan) row.professionalId};
+    _draft
+      ..startsAt = selected.startsAt
+      ..companyStartsAt = DateTime.parse('${_date}T${selected.label}:00')
+      ..distribution = _mode == _Mode.any
+          ? Distribution.any
+          : Distribution.specific
+      ..assignments = _mode == _Mode.any
+          ? {}
+          : {for (final row in plan) row.petId: row.professionalId}
+      ..plan = plan
+      ..scheduleMinutes = _minutesOf(slot, plan)
+      ..professionalId = _mode != _Mode.any && single.length == 1
+          ? single.single
+          : null
+      ..professionalName = _mode != _Mode.any && single.length == 1
+          ? plan.first.professionalName
+          : null;
     // A reschedule keeps the transport rules of the team: no new quote. A
     // petshop without transport in the app has no transport step; while
     // unknown, the transport step reads the policy itself.
     final review =
-        widget.draft.reschedule ||
-        AppScope.of(context).transportOffered == false;
+        _draft.reschedule || AppScope.of(context).transportOffered == false;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => review
-            ? ConfirmationScreen(draft: widget.draft)
-            : TransportOptionsScreen(draft: widget.draft),
+            ? ConfirmationScreen(draft: _draft)
+            : TransportOptionsScreen(draft: _draft),
       ),
     );
   }
@@ -208,12 +373,14 @@ class _OnlineScheduleScreenState extends State<OnlineScheduleScreen> {
   Widget _content(BuildContext context) {
     final professionals = _professionals;
     final times = _times;
-    final selected = times.where((item) => item.label == _time).firstOrNull;
+    final selected = _selected;
     final wide = tutorWide(context);
+    final plan = selected == null ? null : _plan(selected.slot);
+    final problem = selected == null ? null : _problem(selected.slot);
     return BookingFrame(
       title: 'Escolher horário',
       step: 2,
-      stepCount: bookingStepCount(context, reschedule: widget.draft.reschedule),
+      stepCount: bookingStepCount(context, reschedule: _draft.reschedule),
       actions: [
         // Pulling the page down needs a touch screen.
         if (wide)
@@ -228,21 +395,29 @@ class _OnlineScheduleScreenState extends State<OnlineScheduleScreen> {
           : Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
-                '${formatWeekday(_day)}, ${formatShortDate(_day)} às ${selected.label} · ${_professional?.name ?? 'qualquer profissional'}',
+                '${formatWeekday(_day)}, ${formatShortDate(_day)} às ${selected.label} · ${_mode == _Mode.any ? 'qualquer profissional' : _label(selected)}',
                 style: AppTextStyles.captionMuted,
               ),
             ),
       summary: BookingSummary(
-        pets: widget.draft.pets,
-        services: widget.draft.selectedServices,
+        pets: _draft.pets,
+        services: _draft.selectedServices,
         when: selected == null
             ? null
             : BookingSummary.day(_day, selected.label),
-        professional: _professional?.name ?? 'Qualquer profissional',
+        professional: _label(selected),
         showProfessional: true,
+        petProfessionals: plan == null || !_severalPets
+            ? null
+            : _petLines(selected!, plan),
+        reservedMinutes: selected == null
+            ? null
+            : _minutesOf(selected.slot, plan!),
       ),
       primary: FilledButton(
-        onPressed: selected == null || _loading ? null : _continue,
+        onPressed: selected == null || _loading || problem != null
+            ? null
+            : _continue,
         child: const Text('Continuar'),
       ),
       back: TextButton(
@@ -256,7 +431,9 @@ class _OnlineScheduleScreenState extends State<OnlineScheduleScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Horários para ${widget.draft.totalDuration} min de atendimento. A disponibilidade será conferida novamente ao confirmar.',
+          _severalPets
+              ? 'Os serviços somam $_total min. Com profissionais diferentes, os pets são atendidos ao mesmo tempo e a reserva fica mais curta. A disponibilidade será conferida novamente ao confirmar.'
+              : 'Horários para $_total min de atendimento. A disponibilidade será conferida novamente ao confirmar.',
         ),
         const SizedBox(height: 20),
         if (!wide) ...[
@@ -312,6 +489,25 @@ class _OnlineScheduleScreenState extends State<OnlineScheduleScreen> {
     );
   }
 
+  /// "Ana · 08:00–09:00" per pet, on the company clock of the chosen day.
+  Map<String, String> _petLines(
+    _TimeOption selected,
+    List<SlotAssignment> plan,
+  ) {
+    String clock(DateTime value) {
+      final local = DateTime.parse(
+        '${_date}T${selected.label}:00',
+      ).add(value.difference(selected.startsAt));
+      return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    }
+
+    return {
+      for (final row in plan)
+        row.petId:
+            '${row.professionalName} · ${clock(row.startsAt)}–${clock(row.endsAt)}',
+    };
+  }
+
   /// The open month of wide windows, in place of the strip and Outra data.
   Widget _calendar() => AppTourTarget(
     id: TipTargets.scheduleDays,
@@ -330,79 +526,267 @@ class _OnlineScheduleScreenState extends State<OnlineScheduleScreen> {
     List<_Professional> professionals,
     List<_TimeOption> times, {
     required bool top,
-  }) => [
-    if (professionals.length > 1) ...[
-      if (top) const SizedBox(height: 24),
-      const SectionHeader(title: 'Profissional'),
-      AppTourTarget(
-        id: TipTargets.scheduleProfessional,
-        child: Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            _Choice(
-              label: 'Qualquer profissional',
-              selected: _professional == null,
-              onSelected: _loading ? null : () => _chooseProfessional(null),
-            ),
-            for (final professional in professionals)
+  }) {
+    final selected = _selected;
+    return [
+      if (professionals.length > 1) ...[
+        if (top) const SizedBox(height: 24),
+        const SectionHeader(title: 'Profissional'),
+        AppTourTarget(
+          id: TipTargets.scheduleProfessional,
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
               _Choice(
-                label: professional.name,
-                selected: _professional?.id == professional.id,
-                onSelected: _loading
-                    ? null
-                    : () => _chooseProfessional(professional),
+                label: 'Qualquer profissional',
+                selected: _mode == _Mode.any,
+                onSelected: _loading ? null : () => _chooseMode(_Mode.any),
               ),
-          ],
-        ),
-      ),
-    ],
-    if (top || professionals.length > 1) const SizedBox(height: 24),
-    const SectionHeader(title: 'Horários disponíveis'),
-    if (_loading)
-      const Padding(
-        padding: EdgeInsets.all(16),
-        child: Center(child: CircularProgressIndicator()),
-      )
-    else if (_error != null)
-      Text(_error!, style: const TextStyle(color: AppColors.danger))
-    else if (times.isEmpty)
-      Text(
-        _professional != null && _slots.isNotEmpty
-            ? '${_professional!.name} não tem horários livres neste dia. Escolha outro dia ou qualquer profissional.'
-            : 'Nenhum horário disponível neste dia. Escolha outro dia.',
-      )
-    else
-      for (final (title, from, to) in const [
-        ('Manhã', 0, 12),
-        ('Tarde', 12, 18),
-        ('Noite', 18, 24),
-      ])
-        if (times.any((t) => t.hour >= from && t.hour < to)) ...[
-          Padding(
-            padding: const EdgeInsets.only(top: 6, bottom: 10),
-            child: Text(title, style: AppTextStyles.captionMuted),
+              for (final professional in professionals)
+                _Choice(
+                  label: professional.name,
+                  selected:
+                      _mode == _Mode.one &&
+                      _professional?.id == professional.id,
+                  onSelected: _loading
+                      ? null
+                      : () => _chooseMode(_Mode.one, professional),
+                ),
+              if (_severalPets)
+                _Choice(
+                  label: 'Escolher por pet',
+                  selected: _mode == _Mode.perPet,
+                  onSelected: _loading ? null : () => _chooseMode(_Mode.perPet),
+                ),
+            ],
           ),
-          AppTourTarget(
-            id: TipTargets.scheduleTimes,
-            child: Wrap(
+        ),
+        if (_severalPets) ...[
+          const SizedBox(height: 10),
+          Text(switch (_mode) {
+            _Mode.any =>
+              'A equipe distribui os pets entre os profissionais livres no horário.',
+            _Mode.one =>
+              '${_professional!.name} atende todos os pets, um depois do outro. Só aparecem os horários com tempo para todos.',
+            _Mode.perPet =>
+              'Escolha o horário e, depois, o profissional de cada pet.',
+          }, style: AppTextStyles.captionMuted),
+        ],
+      ],
+      if (top || professionals.length > 1) const SizedBox(height: 24),
+      const SectionHeader(title: 'Horários disponíveis'),
+      if (_loading)
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: Center(child: CircularProgressIndicator()),
+        )
+      else if (_error != null)
+        Text(_error!, style: const TextStyle(color: AppColors.danger))
+      else if (times.isEmpty)
+        Text(
+          _mode == _Mode.one && _slots.isNotEmpty
+              ? _severalPets
+                    ? '${_professional!.name} não tem tempo para todos os pets neste dia. Escolha outro dia, Escolher por pet ou qualquer profissional.'
+                    : '${_professional!.name} não tem horários livres neste dia. Escolha outro dia ou qualquer profissional.'
+              : 'Nenhum horário disponível neste dia. Escolha outro dia.',
+        )
+      else
+        for (final (title, from, to) in const [
+          ('Manhã', 0, 12),
+          ('Tarde', 12, 18),
+          ('Noite', 18, 24),
+        ])
+          if (times.any((t) => t.hour >= from && t.hour < to)) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 6, bottom: 10),
+              child: Text(title, style: AppTextStyles.captionMuted),
+            ),
+            AppTourTarget(
+              id: TipTargets.scheduleTimes,
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final time in times.where(
+                    (t) => t.hour >= from && t.hour < to,
+                  ))
+                    _Choice(
+                      label: time.label,
+                      selected: time.label == _time,
+                      onSelected: () => _chooseTime(time.label),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+      if (!_loading && _error == null && selected != null && _severalPets)
+        AppTourTarget(
+          id: TipTargets.schedulePets,
+          child: _mode == _Mode.perPet
+              ? _perPet(selected)
+              : _distribution(selected),
+        ),
+    ];
+  }
+
+  /// Who does each pet at the chosen time, in [_Mode.any] and [_Mode.one].
+  Widget _distribution(_TimeOption selected) {
+    final plan = _plan(selected.slot), lines = _petLines(selected, plan);
+    final minutes = _minutesOf(selected.slot, plan);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 10),
+        const SectionHeader(title: 'Quem atende cada pet'),
+        for (final pet in _draft.pets)
+          _PetLine(name: pet.name, detail: lines[pet.id] ?? ''),
+        const SizedBox(height: 6),
+        Text(_reservedText(minutes), style: AppTextStyles.captionMuted),
+      ],
+    );
+  }
+
+  String _reservedText(int minutes) => minutes == _total
+      ? 'Tempo previsto da reserva: $minutes min.'
+      : 'Tempo previsto da reserva: $minutes min, com pets atendidos ao mesmo tempo (os serviços somam $_total min).';
+
+  /// The choice of the professional of each pet, at the chosen time.
+  Widget _perPet(_TimeOption selected) {
+    final slot = selected.slot;
+    final everyone = _free(slot).where((p) => p.freeMinutes >= _total).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    final problem = _problem(slot);
+    final plan = _plan(slot), lines = _petLines(selected, plan);
+    // Times of the day when one professional has time for every pet.
+    final single = [
+      for (final time in _times)
+        if (_free(time.slot).any((p) => p.freeMinutes >= _total)) time,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 10),
+        const SectionHeader(title: 'Profissional de cada pet'),
+        if (everyone.isNotEmpty) ...[
+          const Text('Mesmo profissional para todos os pets:'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final professional in everyone)
+                _Choice(
+                  label: professional.name,
+                  selected: _draft.pets.every(
+                    (pet) => _assignments[pet.id] == professional.id,
+                  ),
+                  onSelected: () => setState(
+                    () => _assignments = {
+                      for (final pet in _draft.pets) pet.id: professional.id,
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ] else ...[
+          Text(
+            'Neste horário, nenhum profissional tem tempo para todos os pets: escolha profissionais diferentes.${single.isEmpty ? '' : ' Para um só profissional, troque o horário:'}',
+            style: const TextStyle(color: AppColors.warning),
+          ),
+          if (single.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
               spacing: 10,
               runSpacing: 10,
               children: [
-                for (final time in times.where(
-                  (t) => t.hour >= from && t.hour < to,
-                ))
+                for (final time in single)
                   _Choice(
                     label: time.label,
-                    selected: time.label == _time,
-                    onSelected: () => setState(() => _time = time.label),
+                    selected: false,
+                    onSelected: () => _chooseTime(time.label),
                   ),
               ],
             ),
+          ],
+        ],
+        const SizedBox(height: 14),
+        for (final pet in _draft.pets) ...[
+          Text(
+            '${pet.name} · ${_draft.petMinutes(pet.id)} min',
+            style: Theme.of(context).textTheme.titleSmall,
           ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final professional in _options(slot, pet.id))
+                _Choice(
+                  label: professional.name,
+                  selected: _assignments[pet.id] == professional.id,
+                  onSelected: () => setState(
+                    () => _assignments = {
+                      ..._assignments,
+                      pet.id: professional.id,
+                    },
+                  ),
+                ),
+            ],
+          ),
+          if (problem == null && lines[pet.id] != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(lines[pet.id]!, style: AppTextStyles.captionMuted),
+            ),
           const SizedBox(height: 14),
         ],
-  ];
+        if (problem != null)
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              problem,
+              style: const TextStyle(color: AppColors.danger),
+            ),
+          )
+        else
+          Text(
+            _reservedText(_minutesOf(slot, plan)),
+            style: AppTextStyles.captionMuted,
+          ),
+      ],
+    );
+  }
+}
+
+/// A pet and who does it, as "Ana · 08:00–09:00".
+class _PetLine extends StatelessWidget {
+  const _PetLine({required this.name, required this.detail});
+  final String name;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.pets_rounded, size: 18, color: AppColors.primary),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: name, style: AppTextStyles.strong),
+                TextSpan(text: ' · $detail'),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _DayStrip extends StatefulWidget {

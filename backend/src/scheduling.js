@@ -4,6 +4,7 @@ import { staffSeatOccupied } from './manager_activation.js';
 import { requireEditableWorkforceMember, requireNoOpenAssignments } from './workforce_access.js';
 import { normalizeServiceQuote,serviceQuote,quoteMatches } from './service_quote.js';
 import { reservationState,samePet } from './pet_reservations.js';
+import { assignmentInput, assignedTo, bestDistribution, DISTRIBUTIONS, freeMinutes, involvedUids, overloaded, petMinutes, segmentsFor } from './distribution.js';
 import { executionItems, changePetExecution } from './pet_execution.js';
 import { authorizeBlock, canEditBlock, blockStartsAt } from './block_policy.js';
 import {prepareBookingTransport,writeBookingTransport,prepareTransportCancellation,writeTransportCancellation} from './transport_booking.js';
@@ -47,10 +48,11 @@ export const jsonAppointment = (doc) => ({ id: doc.id, ...doc.data(), items:exec
 // professionalUid stays: the tutor app receives the server-chosen professional.
 const events = (list) => list.map(({ status, at }) => ({ status, at }));
 export function tutorView(value) {
-  const { notes, createdBy, updatedBy, ...rest } = value;
+  // The account of each professional stays on the server; the name travels.
+  const { notes, createdBy, updatedBy, professionalUids, ...rest } = value;
   return { ...rest, ...(Array.isArray(rest.history) ? { history: events(rest.history) } : {}),
     ...(Array.isArray(rest.observations) ? { observations: rest.observations.map(({ petId, text, createdAt }) => ({ petId, text, createdAt })) } : {}),
-    items: (rest.items ?? []).map((item) => {
+    items: (rest.items ?? []).map(({ professionalUid, ...item }) => {
       if (!item.execution) return item;
       const { startedBy, completedBy, ...execution } = item.execution;
       return { ...item, execution: { ...execution, ...(Array.isArray(execution.history) ? { history: events(execution.history) } : {}) } };
@@ -118,20 +120,60 @@ export async function bookingData(tx, db, tenantId, uid, access, customerId, ite
     tutorUid:customer.get('tutorUid') ?? null, items:confirmedItems, unserved, durationMinutes, priceCents, policy:policy.data(), professionals:professionalDocs.docs.filter(doc=>eligible.has(doc.id)||unlinkedAllowed.has(doc.id)) };
 }
 
-export function professionalAvailable(booking, professional, day, state, start, end, excludeId) {
-  const weeklyDay = civil(zonedInstant(day,720,booking.policy.timeZone),booking.policy.timeZone).weekDay;
-  if (!within(booking.policy.days[weeklyDay],start,end)) return false;
-  if (professional.get('availability') && !within(professional.get('availability')[weeklyDay],start,end)) return false;
-  const interval = { start,end };
-  if (Object.values(state.blocks ?? {}).some((block) => overlaps(interval,block))) return false;
-  return !Object.entries(state.reservations ?? {}).some(([id, value]) => id !== excludeId && (value.professionalId === professional.id || samePet(booking,value)) && overlaps(interval,value));
+// How the pets of a booking are given to the professionals. Absent: the
+// answer of the earlier apps, one professional for every pet (the chosen one
+// or the first free), for the summed time.
+function distributionValue(value) {
+  if (value == null) return null;
+  if (!DISTRIBUTIONS.includes(value)) invalid('Distribuição dos profissionais inválida.');
+  return value;
+}
+const weekDayOf = (booking, day) => civil(zonedInstant(day,720,booking.policy.timeZone),booking.policy.timeZone).weekDay;
+
+/** Free minutes of each eligible professional from [start], in their order. */
+export function freeTimes(booking, day, state, start, excludeId) {
+  const weekDay = weekDayOf(booking, day), blocks = Object.values(state.blocks ?? {}), reservations = Object.entries(state.reservations ?? {});
+  return booking.professionals.map((doc) => {
+    const availability = doc.get('availability');
+    return { id: doc.id, doc, name: doc.get('name'), free: freeMinutes({ companyPeriods: booking.policy.days?.[weekDay], professionalPeriods: availability ? availability[weekDay] ?? [] : null, blocks, reservations, professionalId: doc.id, start, excludeId }) };
+  });
+}
+// The same pet is never in two reservations at the same time.
+function petBusy(booking, state, start, end, excludeId) {
+  return Object.entries(state.reservations ?? {}).some(([id, value]) => id !== excludeId && samePet(booking, value) && overlaps({ start, end }, value));
+}
+
+/** Plan of a booking that starts at [start] (minute of the company day): the
+ * segment of each pet, or null when it does not fit. Without [distribution],
+ * one professional ([professionalId] or the first free) does every pet. With
+ * an [assignment] (SPECIFIC), the pets go to the chosen professionals; with
+ * ANY, or SPECIFIC without one, to the best automatic distribution. */
+export function planBooking(booking, day, state, start, excludeId, { distribution = null, assignment = null, professionalId = null } = {}) {
+  const pets = petMinutes(booking.items), total = pets.reduce((sum, pet) => sum + pet.minutes, 0);
+  const free = freeTimes(booking, day, state, start, excludeId);
+  let chosen = null;
+  if (!distribution) {
+    const professional = free.find((value) => (!professionalId || value.id === professionalId) && value.free >= total);
+    if (professional) chosen = new Map(pets.map((pet) => [pet.petId, professional.id]));
+  } else if (assignment) {
+    const freeById = new Map(free.map((value) => [value.id, value.free]));
+    if ([...assignment.values()].every((id) => freeById.has(id)) && !overloaded(pets, assignment, freeById).length) chosen = assignment;
+  } else {
+    chosen = bestDistribution(pets, free.map(({ id, free: minutes }) => ({ id, free: Math.min(minutes, total) })))?.assignment ?? null;
+  }
+  if (!chosen) return { free, pets, plan: null };
+  const segments = segmentsFor(pets, chosen, start), end = Math.max(...segments.map((segment) => segment.end));
+  if (petBusy(booking, state, start, end, excludeId)) return { free, pets, plan: null };
+  return { free, pets, plan: { segments, end, minutes: end - start, total } };
 }
 
 export const getAvailableSlots = onCall(options, async (request) => {
   const db = localBackend(); const uid = await actor(request);
-  object(request.data,['tenantId','customerId','day','items','professionalId','appointmentId'],'Consulta');
+  object(request.data,['tenantId','customerId','day','items','professionalId','appointmentId','distribution'],'Consulta');
   const tenantId = identifier(request.data.tenantId,'Empresa'); const customerId = identifier(request.data.customerId,'Cliente');
   const day = dayValue(request.data.day); const items = selection(request.data.items);
+  const distribution = distributionValue(request.data.distribution);
+  if (distribution && request.data.professionalId != null) invalid('Com a distribuição, o profissional é escolhido por pet.');
   const excludeId = request.data.appointmentId == null ? null : identifier(request.data.appointmentId, 'Agendamento');
   const requestedProfessional = request.data.professionalId == null ? null : identifier(request.data.professionalId,'Profissional');
   return db.runTransaction(async (tx) => {
@@ -149,22 +191,38 @@ export const getAvailableSlots = onCall(options, async (request) => {
     refuseUnservedPets(booking, access, items.map((item) => item.petId).filter((id) => !bookedPets.includes(id)));
     const doc = await tx.get(dayRef(db,tenantId,day)); const state = await reservationState(tx,db,tenantId,doc);
     const slots = [];
-    for (let start=0;start+booking.durationMinutes<=1440;start+=booking.policy.slotMinutes) {
+    for (let start=0;start<1440;start+=booking.policy.slotMinutes) {
       const timestamp = zonedInstant(day,start,booking.policy.timeZone);
       if (timestamp == null || timestamp <= Date.now()) continue;
-      for (const professional of booking.professionals) {
-        if (requestedProfessional && requestedProfessional !== professional.id) continue;
-        if (professionalAvailable(booking,professional,day,state,start,start+booking.durationMinutes,excludeId)) {
-          slots.push({ startsAt:new Date(timestamp).toISOString(), label:timeLabel(start), professionalId:professional.id, professionalName:professional.get('name') });
+      const at = (minute) => new Date(timestamp+(minute-start)*60000).toISOString();
+      if (!distribution) {
+        // Earlier apps: one slot per professional free for the summed time.
+        if (start+booking.durationMinutes>1440) break;
+        if (petBusy(booking,state,start,start+booking.durationMinutes,excludeId)) continue;
+        for (const professional of freeTimes(booking,day,state,start,excludeId)) {
+          if (requestedProfessional && requestedProfessional !== professional.id) continue;
+          if (professional.free >= booking.durationMinutes) slots.push({ startsAt:at(start), label:timeLabel(start), professionalId:professional.id, professionalName:professional.name });
         }
+        continue;
       }
+      // One slot per start, with the automatic distribution; SPECIFIC adds the
+      // free minutes of each professional, capped at the summed time, so the
+      // app shows only the combinations that fit.
+      const { free, pets, plan } = planBooking(booking,day,state,start,excludeId,{distribution});
+      if (!plan) continue;
+      const names = new Map(free.map((value) => [value.id,value.name]));
+      const shortest = Math.min(...pets.map((pet) => pet.minutes));
+      slots.push({ startsAt:at(start), endsAt:at(plan.end), label:timeLabel(start), minutes:plan.minutes,
+        professionalId:plan.segments[0].professionalId, professionalName:names.get(plan.segments[0].professionalId),
+        assignments:plan.segments.map((segment) => ({ petId:segment.petId, professionalId:segment.professionalId, professionalName:names.get(segment.professionalId), startsAt:at(segment.start), endsAt:at(segment.end) })),
+        ...(distribution === 'SPECIFIC' ? { professionals:free.filter((value) => value.free >= shortest).map((value) => ({ id:value.id, name:value.name, freeMinutes:Math.min(value.free,plan.total) })) } : {}) });
     }
     return { slots, serviceQuote:serviceQuote(booking.items), timeZone:booking.policy.timeZone, durationMinutes:booking.durationMinutes, priceCents:booking.priceCents };
   });
 });
 
 export const saveAppointment = onCall(options, async (request) => {
-  object(request.data,['tenantId','requestId','appointmentId','customerId','startsAt','items','professionalId','notes','tutorNotes','transportQuoteId','expectedPriceCents','expectedDurationMinutes','expectedServices'],'Pedido');
+  object(request.data,['tenantId','requestId','appointmentId','customerId','startsAt','items','professionalId','notes','tutorNotes','transportQuoteId','expectedPriceCents','expectedDurationMinutes','expectedServices','distribution','assignments'],'Pedido');
   const appointmentId = identifier(request.data.appointmentId,'Agendamento'); const customerId=identifier(request.data.customerId,'Cliente');
   const startsAt = text(request.data.startsAt,'Horário',40,20); const timestamp = Date.parse(startsAt);
   if (!Number.isFinite(timestamp)) invalid('Horário inválido.');
@@ -173,9 +231,15 @@ export const saveAppointment = onCall(options, async (request) => {
   // An absent field keeps the stored text; the hash distinguishes absent from empty.
   const sentNotes=Object.hasOwn(request.data,'notes'),sentTutorNotes=Object.hasOwn(request.data,'tutorNotes');
   const professionalId = request.data.professionalId == null ? null : identifier(request.data.professionalId,'Profissional');
+  const distribution = distributionValue(request.data.distribution);
+  if (distribution && professionalId) invalid('Com a distribuição, o profissional é escolhido por pet.');
+  // SPECIFIC carries the professional of every pet; ANY lets the server choose.
+  if (distribution !== 'SPECIFIC' && request.data.assignments != null) invalid('Profissionais por pet só valem na escolha por pet.');
+  const assignment = distribution === 'SPECIFIC' ? assignmentInput(request.data.assignments, items.map((item) => item.petId), invalid) : null;
   const expectedServices=normalizeServiceQuote(request.data.expectedServices);
   const expectedPriceCents=request.data.expectedPriceCents??null,expectedDurationMinutes=request.data.expectedDurationMinutes??null;
-  return teamCommand(request,'saveAppointment',{appointmentId,customerId,startsAt,items,professionalId,notes:sentNotes?notes:null,tutorNotes:sentTutorNotes?tutorNotes:null,expectedPriceCents,expectedDurationMinutes,expectedServices,...(request.data.transportQuoteId?{transportQuoteId:request.data.transportQuoteId}:{})},async ({db,tx,tenantId,uid,access}) => {
+  return teamCommand(request,'saveAppointment',{appointmentId,customerId,startsAt,items,professionalId,notes:sentNotes?notes:null,tutorNotes:sentTutorNotes?tutorNotes:null,expectedPriceCents,expectedDurationMinutes,expectedServices,...(request.data.transportQuoteId?{transportQuoteId:request.data.transportQuoteId}:{}),
+    ...(distribution?{distribution}:{}),...(assignment?{assignments:[...assignment].map(([petId,professional])=>({petId,professionalId:professional}))}:{})},async ({db,tx,tenantId,uid,access}) => {
     if(timestamp<=Date.now())invalid('Escolha um horário futuro.');
     const ref=db.doc(`tenants/${tenantId}/appointments/${appointmentId}`); const existing=await tx.get(ref);
     if (existing.exists && !['REQUESTED','CONFIRMED'].includes(existing.get('status'))) throw new HttpsError('failed-precondition','Este agendamento não pode mais ser editado.');
@@ -192,35 +256,57 @@ export const saveAppointment = onCall(options, async (request) => {
     const ownTutor=roles.includes('TUTOR')&&booking.tutorUid===uid&&access.member.get('customerId')===customerId;
     const voices={notes:team&&sentNotes?notes:existing.get('notes')??'',tutorNotes:ownTutor&&sentTutorNotes?tutorNotes:existing.get('tutorNotes')??''};
     if(expectedPriceCents!==booking.priceCents||expectedDurationMinutes!==booking.durationMinutes||!quoteMatches(expectedServices,booking.items))throw new HttpsError('failed-precondition','Os valores ou a duração dos serviços mudaram. Revise o resumo e confirme novamente.',{reason:'SERVICE_QUOTE_CHANGED',priceCents:booking.priceCents,durationMinutes:booking.durationMinutes,items:booking.items.map(item=>({petId:item.pet.id,services:item.services}))});
-    const local=civil(timestamp,booking.policy.timeZone); const end=local.minute+booking.durationMinutes;
-    if (timestamp % 60000 !== 0 || end>1440) invalid('Horário ou duração inválidos.');
+    const local=civil(timestamp,booking.policy.timeZone);
+    if (timestamp % 60000 !== 0 || (!distribution && local.minute+booking.durationMinutes>1440)) invalid('Horário ou duração inválidos.');
     const currentDay=dayRef(db,tenantId,local.day); const previousDay=existing.exists ? existing.get('day') : null;
     const refs=[currentDay,...(previousDay && previousDay!==local.day ? [dayRef(db,tenantId,previousDay)]:[])];
     const dayDocs=await tx.getAll(...refs); const state=await reservationState(tx,db,tenantId,dayDocs[0]);
-    const professional=booking.professionals.find((doc) => (!professionalId || doc.id===professionalId) && professionalAvailable(booking,doc,local.day,state,local.minute,end,appointmentId));
-    if (!professional) throw new HttpsError('already-exists','Horário indisponível. Atualize os horários e escolha outro.');
+    // Every combination is checked here again, inside the transaction that
+    // writes the day: two bookings never take the same minutes of a person.
+    const { free, pets: minutes, plan } = planBooking(booking,local.day,state,local.minute,appointmentId,{distribution,assignment,professionalId});
+    if (!plan) {
+      const freeById = new Map(free.map((value) => [value.id,value.free]));
+      if (assignment && [...assignment.values()].some((id) => !freeById.has(id))) throw new HttpsError('failed-precondition','Um dos profissionais escolhidos não recebe agendamentos agora. Atualize os horários e escolha de novo.',{reason:'DISTRIBUTION_UNAVAILABLE'});
+      const busy = assignment ? overloaded(minutes,assignment,freeById)[0] : null;
+      if (busy) throw new HttpsError('already-exists',`${free.find((value) => value.id===busy.professionalId)?.name ?? 'O profissional'} não tem tempo para todos os pets escolhidos neste horário. Escolha profissionais diferentes ou outro horário.`,{reason:'DISTRIBUTION_UNAVAILABLE',professionalId:busy.professionalId});
+      throw new HttpsError('already-exists','Horário indisponível. Atualize os horários e escolha outro.');
+    }
     if (Object.keys(state.reservations ?? {}).length >= 500 && !state.reservations?.[appointmentId]) throw new HttpsError('resource-exhausted','Limite de reservas deste dia atingido.');
-    const preparedTransport=await prepareBookingTransport(tx,db,tenantId,uid,access,request.data.transportQuoteId??null,existing,appointmentId,booking,startsAt,new Date(timestamp+booking.durationMinutes*60000).toISOString());
-    const value={...(preparedTransport?.summary?{transport:preparedTransport.summary}:{}),customerId,customer:booking.customer,tutorUid:booking.tutorUid,items:booking.items.map(item=>({...item,execution:{status:existing.exists?existing.get('status'):'CONFIRMED',history:[]}})), executionVersion:1, startsAt:Timestamp.fromMillis(timestamp),endsAt:Timestamp.fromMillis(timestamp+booking.durationMinutes*60000),
-      day:local.day,localStartsAt:`${local.day}T${timeLabel(local.minute)}:00`,timeZone:booking.policy.timeZone,professionalId:professional.id,professional:professional.get('name'),professionalUid:professional.get('authUid') ?? null,
-      durationMinutes:booking.durationMinutes,priceCents:booking.priceCents,history:existing.get('history')??[{status:'CONFIRMED',at:new Date().toISOString()}],status:existing.exists ? existing.get('status'):'CONFIRMED',...voices,...metadata(uid,existing.exists)};
+    // The booking lasts as long as the busiest professional (scheduleMinutes);
+    // durationMinutes stays the summed time of the services, as in the quote.
+    const endsAtMs=timestamp+plan.minutes*60000, at=(minute)=>new Date(timestamp+(minute-local.minute)*60000).toISOString();
+    const docs=new Map(booking.professionals.map((doc)=>[doc.id,doc])), segmentOf=new Map(plan.segments.map((segment)=>[segment.petId,segment]));
+    const lead=docs.get(plan.segments[0].professionalId);
+    const preparedTransport=await prepareBookingTransport(tx,db,tenantId,uid,access,request.data.transportQuoteId??null,existing,appointmentId,booking,startsAt,new Date(endsAtMs).toISOString());
+    const savedItems=booking.items.map(item=>{const segment=segmentOf.get(item.pet.id),doc=docs.get(segment.professionalId);
+      return {...item,professionalId:doc.id,professional:doc.get('name'),professionalUid:doc.get('authUid')??null,startsAt:at(segment.start),endsAt:at(segment.end),localStartsAt:`${local.day}T${timeLabel(segment.start)}:00`,execution:{status:existing.exists?existing.get('status'):'CONFIRMED',history:[]}};});
+    const value={...(preparedTransport?.summary?{transport:preparedTransport.summary}:{}),customerId,customer:booking.customer,tutorUid:booking.tutorUid,items:savedItems, executionVersion:1, startsAt:Timestamp.fromMillis(timestamp),endsAt:Timestamp.fromMillis(endsAtMs),
+      day:local.day,localStartsAt:`${local.day}T${timeLabel(local.minute)}:00`,timeZone:booking.policy.timeZone,professionalId:lead.id,professional:lead.get('name'),professionalUid:lead.get('authUid') ?? null,
+      professionalIds:[...new Set(savedItems.map(item=>item.professionalId))],professionalUids:[...new Set(savedItems.map(item=>item.professionalUid).filter(Boolean))],distribution:distribution??'SINGLE',
+      durationMinutes:booking.durationMinutes,scheduleMinutes:plan.minutes,priceCents:booking.priceCents,history:existing.get('history')??[{status:'CONFIRMED',at:new Date().toISOString()}],status:existing.exists ? existing.get('status'):'CONFIRMED',...voices,...metadata(uid,existing.exists)};
     [value.recordNumber] = await allocateRecordNumbers(tx, db, tenantId, [{type:'appointments',id:appointmentId,recordNumber:existing.get('recordNumber')}]);
     writeBookingTransport(tx,preparedTransport,appointmentId,uid);
     tx.set(ref,value,{merge:true});
-    tx.set(currentDay,{...state,reservations:{...state.reservations,[appointmentId]:{start:local.minute,end,professionalId:professional.id,customerId,petIds:items.map(item=>item.petId)}}});
+    tx.set(currentDay,{...state,reservations:{...state.reservations,[appointmentId]:{start:local.minute,end:plan.end,professionalId:lead.id,customerId,petIds:items.map(item=>item.petId),
+      segments:plan.segments.map(segment=>({professionalId:segment.professionalId,start:segment.start,end:segment.end,petIds:[segment.petId]}))}}});
     if (dayDocs.length>1) { const old=dayDocs[1].data() ?? {}; const reservations={...old.reservations};delete reservations[appointmentId];tx.set(refs[1],{...old,reservations}); }
-    const moved=existing.exists&&(existing.get('startsAt')?.toMillis?.()!==timestamp||existing.get('professionalId')!==professional.id);
+    const assignmentKey=(appointment)=>JSON.stringify((appointment.items??[]).map(item=>[item.pet?.id,Object.hasOwn(item,'professionalId')?item.professionalId:appointment.professionalId]));
+    const moved=existing.exists&&(existing.get('startsAt')?.toMillis?.()!==timestamp||assignmentKey(existing.data())!==assignmentKey(value));
     const when=noticeDate(value.localStartsAt),pets=petNames(booking.items),notices=[];
     if(!existing.exists||moved){
       const type=existing.exists?'APPOINTMENT_RESCHEDULED':'APPOINTMENT_CREATED';
       notices.push({role:'TUTOR',targetUid:booking.tutorUid,type,title:existing.exists?'Agendamento remarcado':'Novo agendamento',text:`${pets} · ${when}`,appointmentId});
-      notices.push({role:'PROFESSIONAL',targetUid:value.professionalUid,type,title:existing.exists?'Atendimento remarcado':'Novo atendimento na sua agenda',text:`${pets} · ${when}`,appointmentId});
-      if(existing.exists&&existing.get('professionalUid')&&existing.get('professionalUid')!==value.professionalUid)notices.push({role:'PROFESSIONAL',targetUid:existing.get('professionalUid'),type:'APPOINTMENT_REASSIGNED',title:'Atendimento saiu da sua agenda',text:`${pets} · ${noticeDate(existing.get('localStartsAt'))}`,appointmentId});
+      // Each professional reads the own pets and the own start.
+      for(const target of involvedUids(value)){
+        const own=savedItems.filter(item=>item.professionalUid===target);
+        notices.push({role:'PROFESSIONAL',targetUid:target,type,title:existing.exists?'Atendimento remarcado':'Novo atendimento na sua agenda',text:`${petNames(own)} · ${noticeDate(own[0].localStartsAt)}`,appointmentId});
+      }
+      if(existing.exists)for(const target of involvedUids(existing.data()).filter(target=>!involvedUids(value).includes(target)))notices.push({role:'PROFESSIONAL',targetUid:target,type:'APPOINTMENT_REASSIGNED',title:'Atendimento saiu da sua agenda',text:`${pets} · ${noticeDate(existing.get('localStartsAt'))}`,appointmentId});
       if(!team)notices.push({role:'TEAM',type,title:existing.exists?'Tutor remarcou um agendamento':'Tutor fez um agendamento',text:`${booking.customer.name} · ${pets} · ${when}`,appointmentId});
     }
     if(preparedTransport?.rows?.length)notices.push({role:'TEAM',type:'TRANSPORT_REQUESTED',title:'Pedido de transporte do tutor',text:`${booking.customer.name} · ${pets} · ${when}`,appointmentId});
     notify(tx,db,tenantId,uid,notices);
-    const saved={id:appointmentId,...value,startsAt:new Date(timestamp).toISOString(),endsAt:new Date(timestamp+booking.durationMinutes*60000).toISOString(),createdAt:null,updatedAt:null,createdBy:null,updatedBy:null};
+    const saved={id:appointmentId,...value,startsAt:new Date(timestamp).toISOString(),endsAt:new Date(endsAtMs).toISOString(),createdAt:null,updatedAt:null,createdBy:null,updatedBy:null};
     return {appointment:team?saved:tutorView(saved)};
   },schedulingRoles);
 });
@@ -252,13 +338,13 @@ export const updateAppointmentStatus = onCall(options,async (request) => {
     const ownsRecord=roles.includes('TUTOR')&&tutorUid===uid&&access.member.get('customerId')===previous.get('customerId');
     if (!team) {
       const ownTutorCancellation=ownsRecord&&status==='CANCELLED'&&['REQUESTED','CONFIRMED'].includes(previous.get('status'));
-      const assignedProfessional=roles.includes('PROFESSIONAL')&&previous.get('professionalUid')===uid&&['IN_PROGRESS','COMPLETED'].includes(status);
+      const assignedProfessional=roles.includes('PROFESSIONAL')&&assignedTo(previous.data(),uid,petId)&&['IN_PROGRESS','COMPLETED'].includes(status);
       if(!ownTutorCancellation&&!assignedProfessional)throw new HttpsError('permission-denied','Operação não permitida para esta conta.');
     }
     const individual=['IN_PROGRESS','COMPLETED'].includes(status);
     if(petId&&!individual)invalid('Ação individual inválida.');
     if (!individual && !transitions[previous.get('status')]?.includes(status)) throw new HttpsError('failed-precondition','Transição de situação inválida.');
-    if (['IN_PROGRESS','COMPLETED'].includes(status) && !roles.includes('MANAGER') && previous.get('professionalUid')!==uid) throw new HttpsError('permission-denied','Somente gerente ou profissional atribuído pode executar o atendimento.');
+    if (['IN_PROGRESS','COMPLETED'].includes(status) && !roles.includes('MANAGER') && !assignedTo(previous.data(),uid,petId)) throw new HttpsError('permission-denied','Somente gerente ou profissional atribuído pode executar o atendimento.');
     const at=new Date().toISOString();
     const patch=individual?changePetExecution(previous.data(),petId,status,uid,at):{status,items:executionItems(previous.data()).map(item=>({...item,execution:{...item.execution,status,history:[...(item.execution.history??[]),{status,at,actorUid:uid}]}}))};
     const schedule=dayRef(db,tenantId,previous.get('day'));const day=await tx.get(schedule);
@@ -272,7 +358,7 @@ export const updateAppointmentStatus = onCall(options,async (request) => {
       if(['CANCELLED','NO_SHOW'].includes(patch.status)){
         const title=patch.status==='CANCELLED'?'Agendamento cancelado':'Não comparecimento registrado';
         notices.push({role:'TUTOR',targetUid:tutorUid,type:'APPOINTMENT_CANCELLED',title,text:summary,appointmentId});
-        notices.push({role:'PROFESSIONAL',targetUid:previous.get('professionalUid'),type:'APPOINTMENT_CANCELLED',title,text:summary,appointmentId});
+        for(const target of involvedUids(previous.data()))notices.push({role:'PROFESSIONAL',targetUid:target,type:'APPOINTMENT_CANCELLED',title,text:summary,appointmentId});
         if(!team)notices.push({role:'TEAM',type:'APPOINTMENT_CANCELLED',title:'Tutor cancelou um agendamento',text:`${previous.get('customer')?.name??'Cliente'} · ${summary}`,appointmentId});
         for(const job of cancelled?.jobs??[])notices.push({role:'DRIVER',targetUid:job.get('driverUid'),type:'TRANSPORT_CANCELLED',title:'Transporte cancelado',text:`${pets} · agendamento cancelado`,transportId:job.id});
       }else if(['PET_RECEIVED','IN_PROGRESS','COMPLETED'].includes(patch.status)){
@@ -287,7 +373,7 @@ export const updateAppointmentStatus = onCall(options,async (request) => {
     const current=await tx.get(db.doc(`tenants/${tenantId}/appointments/${appointmentId}`));
     const roles=access.member.get('roles');
     const execution=['IN_PROGRESS','COMPLETED'].includes(status);
-    if(!current.exists || (execution ? !roles.includes('MANAGER')&&current.get('professionalUid')!==uid : !roles.some(role=>['MANAGER','ATTENDANT'].includes(role))&&!(roles.includes('TUTOR')&&access.member.get('customerId')===current.get('customerId')&&status==='CANCELLED')))
+    if(!current.exists || (execution ? !roles.includes('MANAGER')&&!assignedTo(current.data(),uid,petId) : !roles.some(role=>['MANAGER','ATTENDANT'].includes(role))&&!(roles.includes('TUTOR')&&access.member.get('customerId')===current.get('customerId')&&status==='CANCELLED')))
       throw new HttpsError('permission-denied','Operação não permitida para esta conta.');
   });
 });

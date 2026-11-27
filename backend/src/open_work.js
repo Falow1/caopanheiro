@@ -13,12 +13,12 @@ const openStatuses = {
   transportRequests: openTransportRequestStatuses,
 };
 
-/// True when at least one record of the collection matching field == value
+/// True when at least one record of the collection matching `field op value`
 /// is still open. Reads at most one document.
-export async function hasOpenWork(tx, db, tenantId, collection, field, value) {
+export async function hasOpenWork(tx, db, tenantId, collection, field, value, op = '==') {
   const statuses = openStatuses[collection];
   if (!statuses) throw new Error('Coleção sem situações abertas conhecidas.');
   const page = await tx.get(db.collection(`tenants/${tenantId}/${collection}`)
-    .where(field, '==', value).where('status', 'in', statuses).limit(1));
+    .where(field, op, value).where('status', 'in', statuses).limit(1));
   return !page.empty;
 }

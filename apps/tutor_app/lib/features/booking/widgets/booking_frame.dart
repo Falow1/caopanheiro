@@ -336,7 +336,17 @@ class BookingSummary extends StatelessWidget {
     this.showProfessional = false,
     this.transport,
     this.transportCents = 0,
+    this.petProfessionals,
+    this.reservedMinutes,
   });
+
+  /// "Ana · 08:00–09:00" under each pet, once the professionals of a booking
+  /// with several pets are known; null hides it.
+  final Map<String, String>? petProfessionals;
+
+  /// Real time of the booking (the busiest professional), shown beside the
+  /// summed time of the services when it differs; null before the time.
+  final int? reservedMinutes;
 
   final List<Pet> pets;
 
@@ -445,6 +455,22 @@ class BookingSummary extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
+          if (petProfessionals?[pet.id] case final line?)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.person_outline_rounded,
+                    size: 17,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(line, style: AppTextStyles.strong)),
+                ],
+              ),
+            ),
           if (services != null) ...[
             if (services[pet.id]?.isEmpty ?? true)
               const Text(
@@ -483,15 +509,33 @@ class BookingSummary extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Tempo estimado',
+                  reservedMinutes == null || reservedMinutes == _minutes
+                      ? 'Tempo estimado'
+                      : 'Duração somada dos serviços',
                   style: AppTextStyles.captionMuted,
                 ),
               ),
               Text('$_minutes min', style: AppTextStyles.strong),
             ],
           ),
+          // Pets with different professionals are done at the same time.
+          if (reservedMinutes case final reserved?
+              when reserved != _minutes) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Tempo previsto da reserva',
+                    style: AppTextStyles.captionMuted,
+                  ),
+                ),
+                Text('$reserved min', style: AppTextStyles.strong),
+              ],
+            ),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [

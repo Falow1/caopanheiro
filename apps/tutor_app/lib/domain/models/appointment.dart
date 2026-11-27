@@ -11,8 +11,17 @@ class AppointmentItem {
     required this.price,
     required this.durationMinutes,
     this.execution,
+    this.professionalName,
+    this.startsAt,
+    this.endsAt,
   });
   final PetExecution? execution;
+
+  /// Who does this pet and when, as the server distributed the booking;
+  /// null in appointments saved before the distribution.
+  final String? professionalName;
+  final DateTime? startsAt;
+  final DateTime? endsAt;
   final String petId;
   final String petName;
   final List<String> serviceNames;
@@ -51,7 +60,20 @@ class Appointment {
     this.transport,
     this.tutorNotes = '',
     this.observations = const [],
+    this.distribution,
+    this.assignments,
+    this.scheduleMinutes,
   });
+
+  /// How the pets go to the professionals (ANY or SPECIFIC) and, for
+  /// SPECIFIC, the professional of each pet; sent when booking.
+  final String? distribution;
+  final List<Map<String, String>>? assignments;
+
+  /// Real time of the booking: the busiest professional. [totalDuration]
+  /// stays the summed time of the services.
+  final int? scheduleMinutes;
+  int get reservedMinutes => scheduleMinutes ?? totalDuration;
 
   /// Professional notes about the service, shown per pet.
   final List<PetObservation> observations;
@@ -92,6 +114,9 @@ class Appointment {
     companyId: companyId,
     professionalId: professionalId,
     companyStartsAt: companyStartsAt,
+    distribution: distribution,
+    assignments: assignments,
+    scheduleMinutes: scheduleMinutes,
     status: status ?? this.status,
     items: items,
     history: history ?? this.history,
