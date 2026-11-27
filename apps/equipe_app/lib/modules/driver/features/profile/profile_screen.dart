@@ -1,3 +1,4 @@
+import 'package:caopanheiro_core/caopanheiro_core.dart' show displayPhone;
 import '../../../../../features/more/team_function_profile_screen.dart';
 import '../../../../../features/more/profile_screen.dart' as account;
 import '../../../../features/more/workforce_actions.dart';
@@ -70,7 +71,7 @@ class ProfileScreen extends StatelessWidget {
                     _Info('E-mail', profile.email),
                     _Info(
                       'Telefone',
-                      profile.phone,
+                      displayPhone(profile.phone),
                       last: unified || controller.memberships.length <= 1,
                     ),
                     if (!unified && controller.memberships.length > 1)

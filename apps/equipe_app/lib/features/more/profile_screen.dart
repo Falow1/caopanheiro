@@ -1,5 +1,7 @@
 import 'confirm_sign_out.dart';
 import 'delete_own_account_button.dart';
+import 'own_profile_form_screen.dart';
+import 'package:caopanheiro_core/caopanheiro_core.dart' show displayPhone;
 import '../auth/login_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
@@ -82,6 +84,33 @@ class ProfileScreen extends StatelessWidget {
                 ],
               ),
             ),
+            if (user.phone.isNotEmpty || controller.ownProfileEditable) ...[
+              const SizedBox(height: 24),
+              const SectionTitle('Seus dados'),
+              const SizedBox(height: 12),
+              AppContentCard(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.phone_outlined),
+                      title: const Text('Telefone'),
+                      subtitle: Text(
+                        user.phone.isEmpty
+                            ? 'Não informado'
+                            : displayPhone(user.phone),
+                      ),
+                    ),
+                    if (controller.ownProfileEditable) ...[
+                      const SizedBox(height: 8),
+                      const EditOwnProfileButton(),
+                    ],
+                  ],
+                ),
+              ),
+            ],
             if (user.isManager && companies.length > 1) ...[
               const SizedBox(height: 24),
               const SectionTitle('Empresas vinculadas'),

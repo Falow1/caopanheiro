@@ -20,6 +20,15 @@ class TeamCompany {
 
   /// Expired plan (E2): present only near or after the date of the cycle.
   final CompanyBilling? billing;
+
+  TeamCompany withUser(InternalUser value) => TeamCompany(
+    id: id,
+    recordNumber: recordNumber,
+    name: name,
+    user: value,
+    entitlements: entitlements,
+    billing: billing,
+  );
 }
 
 /// Phase of the plan of a petshop near or after its date (E2). The server

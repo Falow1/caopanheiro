@@ -16,11 +16,12 @@ const PAGE = 250;
 /// Top-level collections with purgeAt.
 export const PURGE_COLLECTIONS = Object.freeze(['platformCommandReceipts', 'billingReceipts', 'managerInvitationOutbox',
   'teamLoginEmailOutbox', 'platformEmailOutbox', 'teamAuthLimits', 'platformEmailLimits', 'platformEmailChallenges',
-  'platformEmailSessions', 'mapSearchCache']);
+  'platformEmailSessions', 'mapSearchCache', 'loginCodeLimits', 'loginCodeChallenges',
+  'pushTokens', 'pushLocalOutbox']);
 /// Collections inside each petshop (tenants/{id}/...) with purgeAt, read as
 /// collection groups: the query needs the collection group index on purgeAt
 /// declared in firestore.indexes.json.
-export const PURGE_GROUPS = Object.freeze(['entityCommandReceipts', 'serviceCommandReceipts', 'transportQuotes', 'tutorInvites']);
+export const PURGE_GROUPS = Object.freeze(['entityCommandReceipts', 'serviceCommandReceipts', 'transportQuotes', 'tutorInvites', 'driverLocations']);
 
 async function deleteMatching(db, query, budget) {
   let deleted = 0;

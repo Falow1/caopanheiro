@@ -1,7 +1,7 @@
 import 'package:equipe_app/domain/policies/transport_review.dart';
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppScreenTips, AppTourTarget;
+    show AppPetIcon, AppScreenTips, AppTourTarget;
 import '../../../../core/screen_tips.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppContentCard, AppTextStyles;
@@ -9,10 +9,12 @@ import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
 import '../../core/app_theme.dart';
 import '../../core/external_actions.dart';
 import '../../core/formatters.dart';
+import '../../core/location_sharing.dart';
 import '../../core/widgets.dart';
 import '../../domain/models.dart';
 import '../../state/app_scope.dart';
 import 'transport_actions.dart';
+import 'widgets/location_sharing_card.dart';
 
 class TransportDetailScreen extends StatelessWidget {
   const TransportDetailScreen({super.key, required this.transportId});
@@ -57,6 +59,7 @@ class TransportDetailScreen extends StatelessWidget {
       transport.status == TransportStatus.assigned ? 'ASSIGNED' : '',
     );
     final readOnly = transport.status.finished || controller.readOnly;
+    final location = controller.location;
     return Scaffold(
       appBar: AppBar(title: Text('Transporte')),
       body: PageBody(
@@ -93,6 +96,14 @@ class TransportDetailScreen extends StatelessWidget {
                 TransportStatusChip(status: transport.status),
               ],
             ),
+            if (location != null && routeStatuses.contains(transport.status))
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: AppTourTarget(
+                  id: TipTargets.driverLocation,
+                  child: LocationSharingCard(sharing: location),
+                ),
+              ),
             const SizedBox(height: 24),
             const SectionTitle('Pets'),
             if (transport.type == TransportType.returnTrip)
@@ -108,12 +119,10 @@ class TransportDetailScreen extends StatelessWidget {
                       horizontal: 17,
                       vertical: 8,
                     ),
-                    leading: CircleAvatar(
-                      backgroundColor: AppColors.mint,
-                      child: Text(
-                        pet.emoji,
-                        style: const TextStyle(fontSize: 26),
-                      ),
+                    leading: AppPetIcon(
+                      icon: pet.breedIcon,
+                      size: 44,
+                      semanticLabel: pet.breed,
                     ),
                     title: Text(
                       pet.name,

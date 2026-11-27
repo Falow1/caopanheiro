@@ -1,3 +1,5 @@
+import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
+    show AppColors;
 import 'package:flutter/material.dart';
 import '../../state/app_scope.dart';
 import '../../core/utils/formatters.dart';
@@ -329,9 +331,36 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
       ],
     );
     final asks = _pickup || _return;
+    // Taking the pets is a choice of its own, marked while no transport is
+    // asked, above the two legs of the transport.
+    final own = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        BookingCheckCard(
+          key: const ValueKey('transport-own'),
+          title: 'Levo e busco meus pets',
+          subtitle: 'Sem transporte do petshop: é só chegar no horário marcado',
+          selected: !asks,
+          onTap: _busy
+              ? null
+              : () => setState(() {
+                  _pickup = false;
+                  _return = false;
+                  _invalidate();
+                }),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Ou peça o transporte do petshop:',
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 10),
+        checks,
+      ],
+    );
     if (!tutorWide(context)) {
       return [
-        checks,
+        own,
         if (asks) _addressForm([..._fields(), ..._map(320), ..._quoteBlock()]),
       ];
     }
@@ -342,7 +371,7 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                checks,
+                own,
                 if (asks)
                   _addressForm([..._fields(), ..._map(480), ..._quoteBlock()]),
               ],
@@ -355,7 +384,7 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    checks,
+                    own,
                     _addressForm([..._fields(), ..._quoteBlock()]),
                   ],
                 ),
@@ -384,6 +413,18 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
   );
 
   List<Widget> _fields() => [
+    const SizedBox(height: 8),
+    Text(
+      'Endereço da coleta e do retorno',
+      style: Theme.of(context).textTheme.titleMedium,
+    ),
+    const SizedBox(height: 4),
+    Text(
+      '1. Escreva a rua, o número e a cidade e toque em Buscar endereço.\n'
+      '2. Escolha o endereço encontrado ou marque o ponto no mapa.\n'
+      '3. Toque em Calcular taxa de transporte.',
+      style: const TextStyle(color: AppColors.muted),
+    ),
     const SizedBox(height: 12),
     TextFormField(
       enabled: !_busy,
@@ -411,6 +452,7 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
       controller: _address,
       decoration: const InputDecoration(
         labelText: 'Endereço completo, número e cidade',
+        helperText: 'Ex.: Rua das Acácias, 245, Cuiabá',
       ),
       onChanged: (_) => setState(() {
         if (!_pointFromMap) _point = null;
@@ -446,6 +488,7 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
       controller: _district,
       decoration: const InputDecoration(
         labelText: 'Bairro e cidade / complemento',
+        helperText: 'Ex.: Centro, Cuiabá · apto 12',
       ),
       onChanged: (_) => setState(_invalidate),
       validator: (v) =>

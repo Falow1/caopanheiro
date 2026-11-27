@@ -56,6 +56,48 @@ class AppController extends AppControllerBase with LiveFollowing {
     await repository.renewSubscriptionUntil(tenantId, day, reason);
   });
 
+  SaasBreedSuggestions? get _breeds => _repository is SaasBreedSuggestions
+      ? _repository as SaasBreedSuggestions
+      : null;
+  bool get breedSuggestionsAvailable => _breeds != null;
+  List<BreedSuggestion> _breedSuggestions = const [];
+
+  /// Most typed first.
+  List<BreedSuggestion> get breedSuggestions => _breedSuggestions;
+  Future<bool> loadBreedSuggestions() => _guard(() async {
+    final breeds = _breeds;
+    if (breeds == null) return;
+    final epoch = _epoch;
+    final rows = [...await breeds.breedSuggestions()]
+      ..sort((a, b) {
+        final byCount = b.count.compareTo(a.count);
+        return byCount != 0
+            ? byCount
+            : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+    if (epoch == _epoch) _breedSuggestions = rows;
+  });
+
+  /// "Avaliada": the suggestion leaves the list (the breed may come in a
+  /// new version of the list, or not).
+  Future<bool> removeBreedSuggestion(String id) => _guard(() async {
+    final breeds = _breeds;
+    if (breeds == null) return;
+    if (readOnly) {
+      throw const FormatException(
+        'Atualize os dados antes de fazer outra alteração.',
+      );
+    }
+    final epoch = _epoch;
+    await breeds.removeBreedSuggestion(id);
+    if (epoch == _epoch) {
+      _breedSuggestions = [
+        for (final item in _breedSuggestions)
+          if (item.id != id) item,
+      ];
+    }
+  });
+
   SaasBillingDesk? get _billing =>
       _repository is SaasBillingDesk ? _repository as SaasBillingDesk : null;
   BillingQueue _billingQueue = const BillingQueue();
@@ -340,6 +382,7 @@ class AppController extends AppControllerBase with LiveFollowing {
     _health = null;
     _diagnostic = null;
     _supportRequests = const [];
+    _breedSuggestions = const [];
     _billingQueue = const BillingQueue();
     _supportLoaded = false;
     _tenants = const [];

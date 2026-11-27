@@ -1,17 +1,23 @@
 import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
-    show petEmojiForSpecies;
+    show PetBreed, petServiceText;
 import 'package:caopanheiro_core/caopanheiro_core.dart';
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppRadii;
+    show AppPetIcon, AppRadii;
 
-import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/confirm_dialogs.dart';
 import '../../domain/models/pet.dart';
 import '../../state/app_controller.dart';
 import '../../state/app_scope.dart';
 import '../navigation/tutor_wide_layout.dart';
+import 'breed_field.dart';
+
+/// Birth date as the server keeps it (yyyy-MM-dd).
+String _day(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}-'
+    '${value.month.toString().padLeft(2, '0')}-'
+    '${value.day.toString().padLeft(2, '0')}';
 
 class PetFormScreen extends StatefulWidget {
   const PetFormScreen({super.key, this.pet});
@@ -26,25 +32,25 @@ class _PetFormScreenState extends State<PetFormScreen> {
   late final TextEditingController _name = TextEditingController(
     text: widget.pet?.name,
   );
-  late final TextEditingController _breed = TextEditingController(
-    text: widget.pet?.breed,
-  );
   late final TextEditingController _notes = TextEditingController(
     text: widget.pet?.notes,
   );
   late String _species = widget.pet?.species ?? 'Cachorro';
-  late String _size = widget.pet?.size ?? 'Médio';
+  // No size to choose: it comes from the breed, on the server too.
+  late PetBreed? _breed = widget.pet?.breedEntry;
+  String? _suggestion;
+  bool _breedMissing = false;
   late DateTime _birthDate = widget.pet?.birthDate ?? DateTime(2023, 1, 1);
-  (String, String, DateTime, String, String, String) get _values =>
-      (_species, _size, _birthDate, _name.text, _breed.text, _notes.text);
-  late final (String, String, DateTime, String, String, String) _initial;
+  (String, String?, DateTime, String, String) get _values =>
+      (_species, _breed?.code, _birthDate, _name.text, _notes.text);
+  late final (String, String?, DateTime, String, String) _initial;
   bool get _dirty => _values != _initial;
 
   @override
   void initState() {
     super.initState();
     _initial = _values;
-    for (final field in [_name, _breed, _notes]) {
+    for (final field in [_name, _notes]) {
       field.addListener(() => setState(() {}));
     }
   }
@@ -52,7 +58,6 @@ class _PetFormScreenState extends State<PetFormScreen> {
   @override
   void dispose() {
     _name.dispose();
-    _breed.dispose();
     _notes.dispose();
     super.dispose();
   }
@@ -67,17 +72,41 @@ class _PetFormScreenState extends State<PetFormScreen> {
     if (date != null) setState(() => _birthDate = date);
   }
 
+  /// A new pet or a new breed follows the rule of the petshop; the other
+  /// data of a pet it no longer serves can still be edited.
+  String? get _breedError {
+    final breed = _breed;
+    if (breed == null) return _breedMissing ? 'Escolha a raça' : null;
+    final pet = widget.pet;
+    if (pet != null && pet.breedEntry?.code == breed.code) return null;
+    final controller = AppScope.of(context);
+    final reason = controller.petPolicy.evaluate(
+      breed,
+      birthDate: _day(_birthDate),
+    );
+    return reason == null
+        ? null
+        : petServiceText(
+            reason,
+            petName: 'o pet',
+            breed: breed,
+            petshop: controller.companyName,
+          );
+  }
+
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    final pet = Pet(
+    final valid = _formKey.currentState!.validate();
+    setState(() => _breedMissing = _breed == null);
+    final breed = _breed;
+    if (!valid || breed == null || _breedError != null) return;
+    final pet = Pet.withBreed(
       id: widget.pet?.id ?? _newId,
+      recordNumber: widget.pet?.recordNumber,
       name: _name.text.trim(),
-      species: _species,
-      breed: _breed.text.trim(),
-      size: _size,
+      breed: breed,
       birthDate: _birthDate,
       notes: _notes.text.trim(),
-      emoji: petEmojiForSpecies(_species),
+      breedSuggestion: _suggestion,
     );
     if (await AppScope.of(context).savePet(pet) && mounted) {
       Navigator.pop(context);
@@ -125,22 +154,7 @@ class _PetFormScreenState extends State<PetFormScreen> {
           ),
           children: [
             if (controller.error != null) Text(controller.error!),
-            Align(
-              child: Container(
-                width: 90,
-                height: 90,
-                decoration: const BoxDecoration(
-                  color: AppColors.mint,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    petEmojiForSpecies(_species),
-                    style: const TextStyle(fontSize: 44),
-                  ),
-                ),
-              ),
-            ),
+            Align(child: AppPetIcon(icon: _breed?.icon, size: 96)),
             const SizedBox(height: 24),
             TextFormField(
               controller: _name,
@@ -157,27 +171,33 @@ class _PetFormScreenState extends State<PetFormScreen> {
                 DropdownMenuItem(value: 'Cachorro', child: Text('Cachorro')),
                 DropdownMenuItem(value: 'Gato', child: Text('Gato')),
               ],
-              onChanged: (value) => setState(() => _species = value!),
+              onChanged: (value) => setState(() {
+                if (value == _species) return;
+                _species = value!;
+                _breed = null;
+                _suggestion = null;
+              }),
             ),
             const SizedBox(height: 14),
-            TextFormField(
-              controller: _breed,
-              validator: required,
-              textInputAction: action,
-              onFieldSubmitted: enter ? submit : null,
-              decoration: const InputDecoration(labelText: 'Raça'),
-            ),
-            const SizedBox(height: 14),
-            DropdownButtonFormField<String>(
-              initialValue: _size,
-              decoration: const InputDecoration(labelText: 'Porte'),
-              items: ['Pequeno', 'Médio', 'Grande']
-                  .map(
-                    (value) =>
-                        DropdownMenuItem(value: value, child: Text(value)),
-                  )
-                  .toList(),
-              onChanged: (value) => setState(() => _size = value!),
+            BreedField(
+              species: _species,
+              value: _breed,
+              policy: controller.petPolicy,
+              birthDate: _day(_birthDate),
+              texts: BreedTexts.tutor,
+              petshop: controller.companyName,
+              legacyBreed:
+                  _breed != null &&
+                      _breed!.code == widget.pet?.breedEntry?.code &&
+                      widget.pet?.breedPending == true
+                  ? widget.pet?.legacyBreed
+                  : null,
+              error: _breedError,
+              onChanged: (choice) => setState(() {
+                _breed = choice.breed;
+                _suggestion = choice.suggestion;
+                _breedMissing = false;
+              }),
             ),
             const SizedBox(height: 14),
             InkWell(

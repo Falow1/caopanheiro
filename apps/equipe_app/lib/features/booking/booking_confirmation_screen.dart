@@ -1,6 +1,7 @@
+import 'package:caopanheiro_core/caopanheiro_core.dart' show displayPhone;
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppContentCard, AppTextStyles;
+    show AppContentCard, AppPetIcon, AppTextStyles;
 
 import '../../core/app_theme.dart';
 import '../../core/formatters.dart';
@@ -138,7 +139,7 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                   draft.customer.name,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
-                Text(draft.customer.phone),
+                Text(displayPhone(draft.customer.phone)),
                 const Divider(height: 30),
                 Text(
                   '${date(draft.displayStartsAt)} às ${time(draft.displayStartsAt)}',
@@ -152,9 +153,17 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '${pet.emoji}  ${pet.name}',
-                          style: AppTextStyles.emphasis,
+                        Row(
+                          children: [
+                            AppPetIcon(icon: pet.breedIcon, size: 30),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                pet.name,
+                                style: AppTextStyles.emphasis,
+                              ),
+                            ),
+                          ],
                         ),
                         Text(
                           draft.services[pet.id]!

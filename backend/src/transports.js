@@ -14,6 +14,7 @@ import { duration, conflictPreview, requireConflictAcknowledgement, driverReplay
 import { notify, petNames } from './notices.js';
 import { customerTutorUid } from './tutor_access.js';
 import { tenantFeature } from './access_policy.js';
+import { prepareLocationRelease } from './driver_location.js';
 const legLabel=(type)=>type==='PICKUP'?'Coleta':'Retorno';
 const tutorStepTitles={GOING_TO_ORIGIN:'Entregador a caminho',PET_COLLECTED:'Pets coletados pelo entregador',IN_TRANSIT:'Pets a caminho do destino',DELIVERED:'Entrega confirmada'};
 
@@ -77,6 +78,7 @@ export const transitionTransport=onCall(options,async(request)=>{
     const tutorUid=await customerTutorUid(tx,db,tenantId,previous.get('customerId'));
     const custody=status==='PET_COLLECTED'?await prepareCustody(tx,db,tenantId,custodyAppointment,previous.data(),transportId):[];
     const release=status==='DELIVERED'?await prepareRelease(tx,db,tenantId,custodyAppointment,previous.data(),transportId):[];
+    const location=status==='DELIVERED'?await prepareLocationRelease(tx,db,tenantId,uid,transportId):null;
     const now=new Date().toISOString();
     let deliveryChecks;
     if(status==='DELIVERED'){
@@ -86,7 +88,7 @@ export const transitionTransport=onCall(options,async(request)=>{
       deliveryChecks={items:ids.map(petId=>({petId,confirmed:true,reason:''})),actorUid:uid,actorName:access.member.get('name')??uid,at:now,legacyCollection:!collection,confirmationMode:'ALL_COLLECTED'};
     }
     const patch={status,events:[...previous.get('events'),{status,createdAt:now,actor:access.member.get('name')??uid}],...(status==='GOING_TO_ORIGIN'?{startedAt:now}:{}),...(status==='PET_COLLECTED'?{collectedAt:now}:{}),...(status==='DELIVERED'?{deliveredAt:now,deliveryChecks}:{})};
-    writeTransportLeg(tx,leg);writeCustody(tx,custody);for(const ref of release)tx.delete(ref);
+    writeTransportLeg(tx,leg);writeCustody(tx,custody);for(const ref of release)tx.delete(ref);if(location)tx.delete(location);
     tx.update(ref,{...patch,...metadata(uid,true)});
     notify(tx,db,tenantId,uid,[{role:'TUTOR',targetUid:tutorUid,type:'TRANSPORT_STATUS',title:tutorStepTitles[status],text:`${legLabel(previous.get('type'))} · ${petNames(previous.get('pets'))}`,appointmentId:previous.get('appointmentId')}]);
     return{transport:{...previous.data(),...patch,createdAt:null,updatedAt:null}};

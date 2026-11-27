@@ -15,6 +15,23 @@ Uri transportMapUri(TransportAddress address) => address.hasPoint
         'query': address.fullAddress,
       });
 
+/// Map centered on a position, for the team to see where the driver is.
+Uri positionMapUri(double latitude, double longitude) => Uri.https(
+  'www.openstreetmap.org',
+  '/',
+  {'mlat': '$latitude', 'mlon': '$longitude'},
+).replace(fragment: 'map=17/$latitude/$longitude');
+
+Future<bool> openPositionMap(
+  double latitude,
+  double longitude, {
+  UrlOpener open = launchUrl,
+}) => _tryOpen(
+  open,
+  positionMapUri(latitude, longitude),
+  LaunchMode.externalApplication,
+);
+
 Future<bool> openTransportRoute(
   TransportAddress address, {
   UrlOpener open = launchUrl,

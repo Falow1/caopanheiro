@@ -28,6 +28,10 @@ class BookingDraft {
   Map<String, dynamic>? transportQuote;
   String tutorNotes = '';
 
+  /// The payment chosen in the review. Demonstration: it is not sent to the
+  /// petshop and nothing is charged.
+  String? paymentMethod;
+
   Iterable<PetService> get allServices =>
       selectedServices.values.expand((items) => items);
   double get totalPrice =>

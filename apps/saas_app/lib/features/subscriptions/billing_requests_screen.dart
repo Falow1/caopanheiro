@@ -34,37 +34,38 @@ class PendingBoard extends StatelessWidget {
     final controller = AppScope.of(context);
     final queue = controller.billingQueue;
     final support = controller.supportWaitingCount;
-    final rows = [
+    // Each row opens only its own category; null is the support queue.
+    final rows = <(int, String, String?)>[
       (
         queue.planChanges,
         queue.planChanges == 1
             ? 'pedido de troca de plano'
             : 'pedidos de troca de plano',
-        false,
+        'PLAN_CHANGE',
       ),
       (
         queue.charges,
         queue.charges == 1 ? 'pagamento a confirmar' : 'pagamentos a confirmar',
-        false,
+        'CHARGE',
       ),
       (
         queue.refunds,
         queue.refunds == 1 ? 'devolução a registrar' : 'devoluções a registrar',
-        false,
+        'REFUND',
       ),
       (
         queue.renewals,
         queue.renewals == 1
             ? 'renovação a confirmar'
             : 'renovações a confirmar',
-        false,
+        'RENEWAL',
       ),
       (
         support,
         support == 1
             ? 'suporte aguardando resposta'
             : 'suportes aguardando resposta',
-        true,
+        null,
       ),
     ];
     return AppContentCard(
@@ -82,15 +83,16 @@ class PendingBoard extends StatelessWidget {
                 style: AppTextStyles.captionMuted,
               ),
             ),
-          for (final (count, label, supportRow) in rows)
+          for (final (count, label, kind) in rows)
             if (count > 0)
               InkWell(
+                key: ValueKey('pending-${kind ?? 'SUPPORT'}'),
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => supportRow
+                    builder: (_) => kind == null
                         ? const SupportRequestsScreen()
-                        : const BillingRequestsScreen(),
+                        : BillingRequestsScreen(kind: kind),
                   ),
                 ),
                 child: Padding(
@@ -101,7 +103,7 @@ class PendingBoard extends StatelessWidget {
                         radius: 13,
                         backgroundColor: AppColors.orange,
                         child: Text(
-                          supportRow &&
+                          kind == null &&
                                   queue.supportCapped &&
                                   !controller.supportLoaded
                               ? '200+'
@@ -126,17 +128,46 @@ class PendingBoard extends StatelessWidget {
   }
 }
 
-/// Subscription requests waiting for the platform, oldest first.
+/// Categories of the requests, in the order of the dashboard.
+const billingCategories = [
+  ('PLAN_CHANGE', 'Trocas de plano'),
+  ('CHARGE', 'Pagamentos a confirmar'),
+  ('REFUND', 'Devoluções a registrar'),
+  ('RENEWAL', 'Renovações a confirmar'),
+];
+
+/// Subscription requests waiting for the platform, oldest first: only the
+/// [kind] chosen on the dashboard, or every category under its own title.
 class BillingRequestsScreen extends StatelessWidget {
-  const BillingRequestsScreen({super.key});
+  const BillingRequestsScreen({super.key, this.kind});
+  final String? kind;
 
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     if (controller.admin == null) return const SizedBox.shrink();
-    final items = controller.billingQueue.items;
+    final all = controller.billingQueue.items;
+    final groups = [
+      for (final (id, title) in billingCategories)
+        if (kind == null || kind == id)
+          (title, all.where((item) => item.kind == id).toList()),
+      if (kind == null)
+        (
+          'Outros pedidos',
+          all
+              .where(
+                (item) =>
+                    !billingCategories.any((entry) => entry.$1 == item.kind),
+              )
+              .toList(),
+        ),
+    ].where((group) => kind != null || group.$2.isNotEmpty).toList();
+    final items = [for (final group in groups) ...group.$2];
+    final title = kind == null
+        ? 'Pedidos de assinatura'
+        : billingCategories.firstWhere((entry) => entry.$1 == kind).$2;
     return Scaffold(
-      appBar: AppBar(title: const Text('Pedidos de assinatura')),
+      appBar: AppBar(title: Text(title)),
       body: RefreshIndicator(
         onRefresh: controller.refresh,
         child: ListView(
@@ -156,35 +187,45 @@ class BillingRequestsScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
               ),
-            for (final item in items)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Card(
-                  child: ListTile(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => BillingRequestScreen(request: item),
+            for (final (groupTitle, groupItems) in groups) ...[
+              if (kind == null && groupItems.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, bottom: 8),
+                  child: Text(
+                    '$groupTitle (${groupItems.length})',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              for (final item in groupItems)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Card(
+                    child: ListTile(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => BillingRequestScreen(request: item),
+                        ),
                       ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 17,
-                      vertical: 8,
-                    ),
-                    title: Text(
-                      item.title,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    subtitle: Text(
-                      '${item.ownerName.isEmpty ? 'Gestor' : item.ownerName} · ${item.detail}',
-                    ),
-                    trailing: Text(
-                      cents(item.amountCents),
-                      style: AppTextStyles.strong,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 17,
+                        vertical: 8,
+                      ),
+                      title: Text(
+                        item.title,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      subtitle: Text(
+                        '${item.ownerName.isEmpty ? 'Gestor' : item.ownerName} · ${item.detail}',
+                      ),
+                      trailing: Text(
+                        cents(item.amountCents),
+                        style: AppTextStyles.strong,
+                      ),
                     ),
                   ),
                 ),
-              ),
+            ],
           ],
         ),
       ),

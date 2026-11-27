@@ -8,6 +8,7 @@ import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { actor, localBackend, object, options, identifier, text, tenantEnabled, tenantOpen } from './runtime.js';
 import { brazilPhone } from './contact_policy.js';
 import { companyReleased } from './access_policy.js';
+import { requirePrincipalAllowed } from './network_rule.js';
 import { AWAITING_MANAGER, TRIAL_PLAN_ID, joinAccount, tenantMirror } from './billing_policy.js';
 import { staffMembers } from './staff_members.js';
 
@@ -92,6 +93,7 @@ export const completeManagerActivation = onCall(options, async (request) => {
       billing.created = !billingDoc.exists;
       plan = billing.plan;
     }
+    await requirePrincipalAllowed(tx, db, uid, tenantId);
     const members = await staffMembers(tx, db, tenantId);
     if(tenant.get('principalManagerUid') && tenant.get('principalManagerUid')!==uid || members.docs.some(d=>d.id!==uid&&d.get('active')===true&&d.get('roles')?.includes('MANAGER')&&d.get('managementDelegated')!==true))
       throw new HttpsError('failed-precondition','Este petshop já possui gestor principal. Solicite um convite de gestão delegada.');

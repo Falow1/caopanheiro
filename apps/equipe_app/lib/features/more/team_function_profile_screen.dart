@@ -1,3 +1,4 @@
+import 'package:caopanheiro_core/caopanheiro_core.dart' show displayPhone;
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppScreenTips, AppTourTarget;
@@ -9,6 +10,7 @@ import '../../state/app_scope.dart';
 import 'team_profile_card.dart';
 import 'workforce_actions.dart';
 import 'confirm_sign_out.dart';
+import 'own_profile_form_screen.dart';
 import 'tips_replay_tile.dart';
 
 class TeamFunctionProfileScreen extends StatelessWidget {
@@ -33,7 +35,11 @@ class TeamFunctionProfileScreen extends StatelessWidget {
 
   Widget _content(BuildContext context) {
     final controller = AppScope.of(context);
-    if (controller.user == null) return const SizedBox.shrink();
+    final user = controller.user;
+    if (user == null) return const SizedBox.shrink();
+    // The phone the person saved; the function's own record is the fallback.
+    final shownPhone = user.phone.isNotEmpty ? user.phone : phone;
+    final editable = controller.ownProfileEditable;
     return Scaffold(
       body: SafeArea(
         child: PageBody(
@@ -53,11 +59,13 @@ class TeamFunctionProfileScreen extends StatelessWidget {
                 const SizedBox(height: 24),
                 AppTourTarget(id: TipTargets.operations, child: operations!),
               ],
-              if (email.isNotEmpty || phone.isNotEmpty) ...[
+              if (email.isNotEmpty || shownPhone.isNotEmpty || editable) ...[
                 const SizedBox(height: 24),
+                const SectionTitle('Seus dados'),
                 AppContentCard(
                   padding: const EdgeInsets.all(16),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (email.isNotEmpty)
                         ListTile(
@@ -66,13 +74,17 @@ class TeamFunctionProfileScreen extends StatelessWidget {
                           title: const Text('E-mail'),
                           subtitle: Text(email),
                         ),
-                      if (phone.isNotEmpty)
+                      if (shownPhone.isNotEmpty)
                         ListTile(
                           contentPadding: EdgeInsets.zero,
                           leading: const Icon(Icons.phone_outlined),
                           title: const Text('Telefone'),
-                          subtitle: Text(phone),
+                          subtitle: Text(displayPhone(shownPhone)),
                         ),
+                      if (editable) ...[
+                        const SizedBox(height: 8),
+                        const EditOwnProfileButton(),
+                      ],
                     ],
                   ),
                 ),

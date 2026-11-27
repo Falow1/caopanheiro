@@ -1,3 +1,7 @@
+import '../domain/repositories/own_team_profile_repository.dart';
+import '../domain/repositories/login_code_repository.dart';
+import '../domain/repositories/push_registration_repository.dart';
+import 'push_device.dart';
 import '../domain/repositories/company_view_repository.dart';
 import '../domain/repositories/customer_unlink_repository.dart';
 import '../domain/repositories/staff_link_repository.dart';
@@ -10,6 +14,9 @@ import '../domain/repositories/transport_management_repository.dart';
 import '../domain/repositories/transport_booking_repository.dart';
 import '../domain/repositories/team_extras_repository.dart';
 import '../domain/repositories/paused_access_repository.dart';
+import '../domain/repositories/pet_service_repository.dart';
+import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
+    show PetPolicy;
 
 import 'dart:async';
 import 'dart:convert';
@@ -48,6 +55,12 @@ class FirebaseLocalRepository
         SchedulingRepository,
         AppointmentNotesRepository,
         TransportManagementRepository,
+        DriverPositionRepository,
+        TripEstimateRepository,
+        OwnTeamProfileRepository,
+        LoginCodeRepository,
+        PushRegistrationRepository,
+        PetServiceRepository,
         TransportBookingRepository,
         TeamExtrasRepository,
         PausedAccessRepository,
@@ -119,6 +132,7 @@ class FirebaseLocalRepository
   });
   @override
   bool get hasPendingCommands => _pending != null || _entityPending != null;
+
   /// Emulator host of a local build; null when connected to staging.
   final String? host;
 
@@ -134,6 +148,7 @@ class FirebaseLocalRepository
         ? probeConnection(emulator)
         : probeConnection(server.host, port: server.port);
   }
+
   final FirebaseAuth _auth;
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
@@ -771,6 +786,7 @@ class FirebaseLocalRepository
         name: value['name'] as String,
         user: InternalUser(
           name: value['userName'] as String,
+          phone: value['userPhone'] as String? ?? '',
           managementDelegated: value['managementDelegated'] == true,
           managementPermissions: (value['managementPermissions'] as List?)
               ?.cast<String>(),
@@ -802,12 +818,29 @@ class FirebaseLocalRepository
     );
     _screenTips = ScreenTips.fromJson(result['screenTips']);
     _managementUid = result['uid'] as String;
+    _contextAt = DateTime.now();
     return _companies;
   });
 
+  /// When the team context was last read in this session.
+  DateTime? _contextAt;
+
+  /// The companies read in the last 30 seconds of this session, or a new
+  /// read: choosing a company right after the login listed them does not
+  /// repeat the heaviest call. The server still checks every access.
+  Future<List<TeamCompany>> recentCompanies() async {
+    final at = _contextAt;
+    if (at != null &&
+        _companies.isNotEmpty &&
+        DateTime.now().difference(at) < const Duration(seconds: 30)) {
+      return _companies;
+    }
+    return getCompanies();
+  }
+
   @override
   Future<InternalUser> selectCompany(String id) => _remote(() async {
-    final companies = await getCompanies();
+    final companies = await recentCompanies();
     final matches = companies.where((company) => company.id == id);
     if (matches.isEmpty) {
       throw const FormatException('Vínculo com a empresa indisponível.');
@@ -820,7 +853,10 @@ class FirebaseLocalRepository
 
   @override
   Future<void> signOut() async {
+    // While the session still calls the server.
+    await _push.unregister();
     ++_session;
+    _contextAt = null;
     _tenantId = null;
     _companies = const [];
     _managementCompanies = const [];
@@ -1005,15 +1041,69 @@ class FirebaseLocalRepository
   });
   @override
   Future<Customer> savePet(String customerId, Pet pet) => _remote(() async {
-    final fields = petToJson(pet)
-      ..remove('id')
-      ..remove('recordNumber');
     final response = await entityCommand('savePet', {
       'customerId': customerId,
       'petId': pet.id,
-      'pet': fields,
+      'pet': petCommandJson(pet),
     });
     return customerFromJson(jsonMap(response['customer']));
+  });
+
+  @override
+  Future<PetPolicy> getPetPolicy() => _remote(() async {
+    final generation = _session;
+    final tenant = _tenantId;
+    if (tenant == null) throw const FormatException('Selecione uma empresa.');
+    final result = await _call('getPetPolicy', {'tenantId': tenant});
+    if (generation != _session || tenant != _tenantId) {
+      throw const FormatException('Sessão encerrada.');
+    }
+    return PetPolicy.fromJson(result['policy']);
+  });
+
+  @override
+  Future<PetPolicy> savePetPolicy(PetPolicy policy, {String? tenantId}) =>
+      _remote(() async {
+        // Another petshop of the same manager ("Aplicar também a"): its own
+        // operation, checked by the server for that petshop.
+        if (tenantId != null && tenantId != _tenantId) {
+          final generation = _session;
+          final result = await _call('savePetPolicy', {
+            'tenantId': tenantId,
+            'requestId': List.generate(
+              32,
+              (_) => Random.secure().nextInt(16).toRadixString(16),
+            ).join(),
+            'policy': policy.toJson(),
+          });
+          if (generation != _session) {
+            throw const FormatException('Sessão encerrada.');
+          }
+          return PetPolicy.fromJson(result['policy']);
+        }
+        final response = await entityCommand('savePetPolicy', {
+          'policy': policy.toJson(),
+        });
+        return PetPolicy.fromJson(response['policy']);
+      });
+
+  @override
+  Future<int> blockPet(String customerId, String petId, String reason) =>
+      _remote(() async {
+        final response = await entityCommand('blockPet', {
+          'customerId': customerId,
+          'petId': petId,
+          'reason': reason,
+        });
+        return (response['futureAppointments'] as num?)?.toInt() ?? 0;
+      });
+
+  @override
+  Future<void> unblockPet(String customerId, String petId) => _remote(() async {
+    await entityCommand('unblockPet', {
+      'customerId': customerId,
+      'petId': petId,
+    });
   });
 
   Future<Map<String, dynamic>> entityCommand(
@@ -1447,6 +1537,50 @@ class FirebaseLocalRepository
       'status': status,
       'message': message,
     });
+  });
+  @override
+  Future<DriverPosition> transportLocation(String transportId) => _remote(
+    () async {
+      return DriverPosition.fromJson(
+        await scopedQuery('getTransportLocation', {'transportId': transportId}),
+      );
+    },
+  );
+  late final _push = PushDevice('equipe', (name, data) => _call(name, data));
+  @override
+  Future<void> registerPush() => _push.register();
+
+  @override
+  Future<String> requestLoginCode() => _remote(() async {
+    final result = await _call('requestLoginCode', {});
+    return result['challengeId'] as String;
+  });
+  @override
+  Future<void> verifyLoginCode(String challengeId, String code) =>
+      _remote(() async {
+        await _call('verifyLoginCode', {
+          'challengeId': challengeId,
+          'code': code,
+        });
+      });
+  @override
+  Future<void> updateOwnProfile(String name, String phone) => _remote(() async {
+    await _call('updateOwnTeamProfile', {'name': name, 'phone': phone});
+  });
+  @override
+  Future<int> estimateTripMinutes(
+    Map<String, String> origin,
+    Map<String, String> destination,
+  ) => _remote(() async {
+    Map<String, String> place(Map<String, String> value) => {
+      'street': value['street'] ?? '',
+      'district': value['district'] ?? '',
+    };
+    final r = await scopedQuery('estimateTransportTrip', {
+      'origin': place(origin),
+      'destination': place(destination),
+    });
+    return (r['minutes'] as num).toInt();
   });
   @override
   Future<Map<String, dynamic>> bookingPolicy() async =>

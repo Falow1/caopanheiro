@@ -255,6 +255,7 @@ class FirebaseProfessionalRepository
         recordNumber: readRecordNumber(pet['recordNumber']),
         name: pet['name'] as String,
         species: pet['species'] as String? ?? '',
+        breedCode: pet['breedCode'] as String?,
         breed: pet['breed'] as String,
         size: pet['size'] as String,
         notes: pet['notes'] as String? ?? '',

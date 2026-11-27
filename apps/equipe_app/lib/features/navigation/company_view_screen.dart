@@ -565,7 +565,16 @@ class _CompanyViewScreenState extends State<CompanyViewScreen>
   Widget build(BuildContext context) {
     final scope = WorkforceScope.of(context);
     if (!scope.allCompanies || scope.function != widget.role) {
-      return const SizedBox.shrink();
+      // While a company opens (or after the view changed) the page keeps
+      // its background: an empty route would show a black screen.
+      return Scaffold(
+        appBar: widget.showBack ? AppBar(title: Text(widget.title)) : null,
+        body: Center(
+          child: scope.busy
+              ? const CircularProgressIndicator()
+              : const Text('Abrindo a empresa...'),
+        ),
+      );
     }
     return Scaffold(
       appBar: widget.showBack ? AppBar(title: Text(widget.title)) : null,

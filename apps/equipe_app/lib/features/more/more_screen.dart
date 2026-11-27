@@ -18,6 +18,7 @@ import '../../state/app_scope.dart';
 import '../admin/availability_screen.dart';
 import '../admin/blocks_screen.dart';
 import '../admin/business_hours_screen.dart';
+import '../admin/pet_policy_screen.dart';
 import '../admin/professionals_screen.dart';
 import 'confirm_sign_out.dart';
 import '../auth/company_selection_screen.dart';
@@ -161,6 +162,15 @@ class MoreScreen extends StatelessWidget {
                         title: 'Horário de funcionamento',
                         onTap: () =>
                             _open(context, const BusinessHoursScreen()),
+                      ),
+                    // Which dogs, cats and puppies the petshop serves.
+                    if (user.isManager &&
+                        user.canManage('SETTINGS') &&
+                        controller.supportsPetService)
+                      MoreMenuTile(
+                        icon: Icons.pets_outlined,
+                        title: 'Pets atendidos',
+                        onTap: () => _open(context, const PetPolicyScreen()),
                       ),
                     if (user.canManageBlocks)
                       MoreMenuTile(

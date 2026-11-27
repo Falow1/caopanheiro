@@ -3,7 +3,7 @@ import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppScreenTips, AppTourTarget;
 import '../../core/screen_tips.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppRadii, AppTextStyles;
+    show AppPetIcon, AppRadii, AppTextStyles;
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show
         AppActionCard,
@@ -332,17 +332,7 @@ class _PetShortcut extends StatelessWidget {
     splashRadius: const BorderRadius.all(Radius.circular(22)),
     child: Column(
       children: [
-        Container(
-          width: 52,
-          height: 52,
-          decoration: const BoxDecoration(
-            color: AppColors.mint,
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: Text(pet.emoji, style: const TextStyle(fontSize: 26)),
-          ),
-        ),
+        AppPetIcon(icon: pet.breedIcon, size: 52, semanticLabel: pet.breed),
         const SizedBox(height: 10),
         Text(
           pet.name,

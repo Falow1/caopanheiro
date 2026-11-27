@@ -1,7 +1,13 @@
 import 'dart:math' as math;
 
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppDimensions, AppRadii, AppRefreshBody, AppTextStyles, AppTourTarget;
+    show
+        AppDimensions,
+        AppPetIcon,
+        AppRadii,
+        AppRefreshBody,
+        AppTextStyles,
+        AppTourTarget;
 import 'package:flutter/material.dart';
 
 import '../../../core/screen_tips.dart';
@@ -433,7 +439,7 @@ class BookingSummary extends StatelessWidget {
         for (final pet in pets) ...[
           Row(
             children: [
-              Text(pet.emoji, style: const TextStyle(fontSize: 20)),
+              AppPetIcon(icon: pet.breedIcon, size: 28),
               const SizedBox(width: 8),
               Expanded(child: Text(pet.name, style: text.titleMedium)),
             ],

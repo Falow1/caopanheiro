@@ -1,8 +1,16 @@
 import 'dart:async';
+import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
+    show AppTourTarget;
 import 'package:flutter/material.dart';
 import '../../state/app_scope.dart';
+import '../../core/screen_tips.dart';
 import '../../core/utils/formatters.dart';
 import '../navigation/tutor_wide_layout.dart';
+import 'live_transport_map_stub.dart'
+    if (dart.library.js_interop) 'live_transport_map_web.dart';
+
+/// Steps in which the driver is on the way and may send the position.
+const _onRoute = {'GOING_TO_ORIGIN', 'PET_COLLECTED', 'IN_TRANSIT'};
 
 /// Transport time on the company wall clock (the petshop's own city), as the
 /// appointment time; older answers without it fall back to this device.
@@ -35,6 +43,15 @@ class _TransportTrackingCardState extends State<TransportTrackingCard>
   List<Map<String, dynamic>> _rows = [];
   String? _error, _company;
   bool _loading = false, _active = true;
+  int _ticks = 0;
+
+  /// A transport on the way reads every 10 seconds, for the map; the others
+  /// every 20, as before.
+  bool get _following => _rows.any(
+    (row) =>
+        row['status'] == 'CONFIRMED' &&
+        _onRoute.contains(row['transportStatus']),
+  );
   @override
   void initState() {
     super.initState();
@@ -43,7 +60,8 @@ class _TransportTrackingCardState extends State<TransportTrackingCard>
       _company = AppScope.of(context).companyId;
       _load();
     });
-    _timer = Timer.periodic(const Duration(seconds: 20), (_) {
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!_following && ++_ticks % 2 != 0) return;
       if (_active && mounted && (ModalRoute.of(context)?.isCurrent ?? false)) {
         _load();
       }
@@ -123,7 +141,7 @@ class _TransportTrackingCardState extends State<TransportTrackingCard>
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const Text(
-            'O entregador marca cada etapa, e esta tela se atualiza sozinha enquanto estiver aberta. A localização em tempo real não aparece.',
+            'O entregador marca cada etapa, e esta tela se atualiza sozinha enquanto estiver aberta. Do início do deslocamento até a entrega, o mapa mostra onde ele está quando o celular dele envia a localização.',
           ),
           if (_error != null) Text(_error!),
           for (final row in _rows) ...[
@@ -152,12 +170,12 @@ class _TransportTrackingCardState extends State<TransportTrackingCard>
               const Text('Transporte cancelado. Esta taxa não será cobrada.'),
             if (row['status'] == 'CONFIRMED') ...[
               if (row['scheduledAt'] != null)
-                Text(
-                  'Horário: ${formatDateTime(transportCompanyTime(row)!)}',
-                ),
+                Text('Horário: ${formatDateTime(transportCompanyTime(row)!)}'),
               _Progress(
                 status: row['transportStatus'] as String? ?? 'ASSIGNED',
               ),
+              if (_onRoute.contains(row['transportStatus']))
+                _DriverLocation(row['driverLocation']),
             ],
           ],
           if (_rows.any((row) => row['feeCents'] is num))
@@ -179,6 +197,53 @@ class _TransportTrackingCardState extends State<TransportTrackingCard>
       ),
     ),
   );
+}
+
+/// Position of the driver on the way, with the time it was sent; before the
+/// first position, only a note.
+class _DriverLocation extends StatelessWidget {
+  const _DriverLocation(this.value);
+  final Object? value;
+  @override
+  Widget build(BuildContext context) {
+    final v = value is Map ? Map<String, dynamic>.from(value as Map) : null;
+    final lat = v?['lat'], lng = v?['lng'];
+    final at = v?['reportedAt'] is String
+        ? DateTime.tryParse(v!['reportedAt'] as String)?.toLocal()
+        : null;
+    if (lat is! num || lng is! num || at == null) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 12),
+        child: Text(
+          'Aguardando a localização do entregador. As etapas continuam valendo.',
+        ),
+      );
+    }
+    return AppTourTarget(
+      id: TipTargets.appointmentDriverMap,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                height: 220,
+                child: LiveTransportMap(
+                  latitude: lat.toDouble(),
+                  longitude: lng.toDouble(),
+                  accuracy: v!['accuracy'] as num?,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text('Posição do entregador enviada às ${formatTime(at)}.'),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _Progress extends StatelessWidget {

@@ -1,3 +1,8 @@
+import 'dart:async';
+
+import '../domain/repositories/own_team_profile_repository.dart';
+import '../domain/repositories/login_code_repository.dart';
+import '../domain/repositories/push_registration_repository.dart';
 import '../domain/repositories/company_view_repository.dart';
 import '../domain/repositories/customer_unlink_repository.dart';
 import '../domain/repositories/staff_link_repository.dart';
@@ -15,6 +20,9 @@ import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
 
 import '../domain/repositories/team_extras_repository.dart';
 import '../domain/repositories/paused_access_repository.dart';
+import '../domain/repositories/pet_service_repository.dart';
+import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
+    show PetPolicy;
 import '../features/more/company_extras.dart';
 import '../features/more/billing_models.dart';
 
@@ -67,13 +75,11 @@ class AppController extends AppControllerBase
   Future<void>? _closingSession;
   List<TeamCompany> get companies => _companies;
   TeamCompany? get company => _company;
-  bool get isPrincipalAccount =>
-      [?company, ...companies].any(
-        (value) =>
-            !value.user.managementDelegated &&
-            (value.user.isManager ||
-                value.user.roles.contains(TenantRole.manager)),
-      );
+  bool get isPrincipalAccount => [?company, ...companies].any(
+    (value) =>
+        !value.user.managementDelegated &&
+        (value.user.isManager || value.user.roles.contains(TenantRole.manager)),
+  );
   List<ManagementCompany> get profileCompanies {
     if (user?.isManager != true) return const [];
     final directory = _repository is ManagementCompanyDirectory
@@ -148,6 +154,7 @@ class AppController extends AppControllerBase
     _agendaError = null;
     _customersError = null;
     _policy = SchedulingPolicy.initial;
+    _petPolicy = const PetPolicy();
     _pendingTutorReturns = 0;
   }
 
@@ -164,6 +171,10 @@ class AppController extends AppControllerBase
           _customers = values;
           _customersLoaded = true;
         }
+        // The pet form lists only the breeds of the rule read here.
+        try {
+          await _loadPetPolicy(epoch);
+        } catch (_) {}
       } catch (_) {
         if (epoch == _sessionEpoch) _clearInvalidAccess();
         rethrow;
@@ -356,7 +367,17 @@ class AppController extends AppControllerBase
       clearOperationState();
       return false;
     }
+    if (success && restored) _registerPush();
     return success && restored;
+  }
+
+  /// This device in the push notifications, after each entry. A refusal or a
+  /// failure never changes the entry.
+  void _registerPush() {
+    final Object repository = _repository;
+    if (repository is PushRegistrationRepository) {
+      unawaited(repository.registerPush().catchError((Object _) {}));
+    }
   }
 
   /// Petshops with the access paused (E2), when the account has no other:
@@ -681,6 +702,50 @@ class AppController extends AppControllerBase
     return _signInWith(extras.signInWithGoogle);
   }
 
+  /// Second step of a new login (a code by e-mail), skippable in this
+  /// demonstration because the server does not require it.
+  String? _loginChallenge;
+  bool get loginCodeAvailable => _repository is LoginCodeRepository;
+  Future<bool> requestLoginCode() => runGuarded(() async {
+    _loginChallenge = await (_repository as LoginCodeRepository)
+        .requestLoginCode();
+  });
+  Future<bool> verifyLoginCode(String code) => runGuarded(() async {
+    final challenge = _loginChallenge;
+    if (challenge == null) {
+      throw const FormatException(
+        'Toque em Enviar código para receber um código.',
+      );
+    }
+    await (_repository as LoginCodeRepository).verifyLoginCode(challenge, code);
+    _loginChallenge = null;
+  });
+
+  /// The person edits their own name and phone; the e-mail stays the login.
+  bool get ownProfileEditable =>
+      _repository is OwnTeamProfileRepository && _user != null && !readOnly;
+  Future<bool> updateOwnProfile(String name, String phone) => runGuarded(
+    () async {
+      if (_repository is! OwnTeamProfileRepository) {
+        throw const FormatException('Edição do perfil indisponível.');
+      }
+      final epoch = _sessionEpoch;
+      await (_repository as OwnTeamProfileRepository).updateOwnProfile(
+        name,
+        phone,
+      );
+      if (epoch != _sessionEpoch || _user == null) return;
+      _user = _user!.withContact(name, phone);
+      _companies = [
+        for (final company in _companies)
+          company.withUser(company.user.withContact(name, phone)),
+      ];
+      if (_company != null) {
+        _company = _company!.withUser(_company!.user.withContact(name, phone));
+      }
+    },
+  );
+
   Future<bool> linkGoogle() => runGuarded(() async {
     final extras = _extras;
     if (extras == null) {
@@ -815,6 +880,7 @@ class AppController extends AppControllerBase
     'mode': endOfCycle ? 'END_OF_CYCLE' : 'NOW',
     'keepTenantId': keepTenantId,
   });
+
   /// An extra petshop leaves the paid cycle, with the refund of the
   /// remaining days, or comes back, with the proportional charge (A1-i).
   Future<bool> changeAccountTenant(String tenantId, {required bool add}) =>
@@ -853,9 +919,7 @@ class AppController extends AppControllerBase
   Future<bool> signIn(String id, String password) =>
       _signInWith(() => _repository.signIn(id, password));
 
-  Future<bool> _signInWith(
-    Future<InternalUser> Function() authenticate,
-  ) async {
+  Future<bool> _signInWith(Future<InternalUser> Function() authenticate) async {
     if (busy) return false;
     final epoch = ++_sessionEpoch;
     _activeFunction = null;
@@ -915,6 +979,7 @@ class AppController extends AppControllerBase
       clearOperationState();
       return false;
     }
+    if (success) _registerPush();
     return success;
   }
 
@@ -1059,6 +1124,76 @@ class AppController extends AppControllerBase
       _saveCustomerResult(() => _repository.saveCustomer(value));
   Future<bool> savePet(String customerId, Pet value) =>
       _saveCustomerResult(() => _repository.savePet(customerId, value));
+
+  /// Pets the petshop serves. Without the integration, or before the first
+  /// read, every pet is served, as the server does without a saved rule.
+  PetPolicy _petPolicy = const PetPolicy();
+  PetPolicy get petPolicy => _petPolicy;
+  bool get supportsPetService => _repository is PetServiceRepository;
+
+  Future<void> _loadPetPolicy(int epoch) async {
+    if (_repository is! PetServiceRepository) return;
+    final value = await (_repository as PetServiceRepository).getPetPolicy();
+    if (epoch == _sessionEpoch) _petPolicy = value;
+  }
+
+  Future<bool> refreshPetPolicy() =>
+      _sessionMutation((epoch) => _loadPetPolicy(epoch));
+
+  /// Saves the rule in the selected petshop and, when chosen, in other
+  /// petshops of the same manager. Returns the names that failed.
+  Future<List<String>?> savePetPolicy(
+    PetPolicy value, {
+    List<TeamCompany> alsoIn = const [],
+  }) async {
+    final failed = <String>[];
+    final saved = await _sessionMutation((epoch) async {
+      final repository = _repository as PetServiceRepository;
+      final confirmed = await repository.savePetPolicy(value);
+      if (epoch != _sessionEpoch) return;
+      _petPolicy = confirmed;
+      for (final company in alsoIn) {
+        try {
+          await repository.savePetPolicy(value, tenantId: company.id);
+        } catch (_) {
+          failed.add(company.name);
+        }
+        if (epoch != _sessionEpoch) return;
+      }
+      if (!catalogOnly) await _reload();
+    });
+    return saved ? failed : null;
+  }
+
+  /// "Não atender este pet". Returns how many appointments still to happen
+  /// stay booked, or null when it failed.
+  Future<int?> blockPet(String customerId, String petId, String reason) async {
+    var count = 0;
+    final saved = await _sessionMutation((epoch) async {
+      count = await (_repository as PetServiceRepository).blockPet(
+        customerId,
+        petId,
+        reason,
+      );
+      if (epoch == _sessionEpoch) await _reloadCustomers(epoch);
+    });
+    return saved ? count : null;
+  }
+
+  Future<bool> unblockPet(String customerId, String petId) => _sessionMutation((
+    epoch,
+  ) async {
+    await (_repository as PetServiceRepository).unblockPet(customerId, petId);
+    if (epoch == _sessionEpoch) await _reloadCustomers(epoch);
+  });
+
+  Future<void> _reloadCustomers(int epoch) async {
+    final values = await _repository.getCustomers();
+    if (epoch != _sessionEpoch) return;
+    _customers = values;
+    _customersLoaded = true;
+  }
+
   Future<bool> saveService(PetService value, {PetService? original}) async {
     final epoch = _sessionEpoch;
     final success = await runGuarded(() async {
@@ -1305,6 +1440,34 @@ class AppController extends AppControllerBase
     return LiveRefresh(source: source, onChange: onChange);
   }
 
+  /// Back to the app: the reading of the live refresh, in parallel and
+  /// without loading state, so the screen keeps answering taps while it
+  /// runs. A revoked access still ends the session.
+  Future<bool> refreshOnResume() async {
+    if (user == null) return false;
+    final epoch = _sessionEpoch;
+    final done = await liveRefresh();
+    if (epoch != _sessionEpoch) return false;
+    if (!done) {
+      _clearInvalidAccess();
+      return false;
+    }
+    // The roles of each petshop come back with the reading, as in
+    // refreshServices.
+    final persistent = _persistent, current = _company;
+    if (persistent != null && current != null) {
+      final companies = persistent.authorizedCompanies;
+      final match = companies.where((value) => value.id == current.id);
+      if (match.isNotEmpty) {
+        _companies = companies;
+        _company = match.first;
+        _user = _company!.user;
+        notifyListeners();
+      }
+    }
+    return true;
+  }
+
   @override
   Future<void> liveReload() async {
     final epoch = _sessionEpoch;
@@ -1330,6 +1493,10 @@ class AppController extends AppControllerBase
     _appointments = values[2] as List<Appointment>;
     _professionals = values[3] as List<Professional>;
     _blocks = values[4] as List<ScheduleBlock>;
+    // The rule moves the team signal too; without connection the last rule read stays.
+    try {
+      await _loadPetPolicy(epoch);
+    } catch (_) {}
   }
 
   Future<List<CompanyDriver>> getDrivers() async {
@@ -1364,6 +1531,33 @@ class AppController extends AppControllerBase
 
   Future<List<ManagedTransport>> getTransports({String? appointmentId}) =>
       _transportRead((r) => r.getTransports(appointmentId: appointmentId));
+
+  /// Live position of the driver of a transport on the way.
+  bool get supportsDriverPosition => _repository is DriverPositionRepository;
+  Future<DriverPosition> transportLocation(String transportId) =>
+      _transportRead(
+        (r) => (r as DriverPositionRepository).transportLocation(transportId),
+      );
+
+  /// Driving minutes between the typed addresses, or null when the route
+  /// cannot be found now (the conflict check then compares equal times).
+  Future<int?> estimateTrip(
+    Map<String, String> origin,
+    Map<String, String> destination,
+  ) async {
+    if (_repository is! TripEstimateRepository) return null;
+    try {
+      return await _transportRead(
+        (r) => (r as TripEstimateRepository).estimateTripMinutes(
+          origin,
+          destination,
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<TransportConflictPreview> transportConflicts(
     String driverUid,
     DateTime at,

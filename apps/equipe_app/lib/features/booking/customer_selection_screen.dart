@@ -1,3 +1,4 @@
+import 'package:caopanheiro_core/caopanheiro_core.dart' show displayPhone;
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppScreenTips, AppTourTarget;
@@ -71,7 +72,7 @@ class _CustomerSelectionScreenState extends State<CustomerSelectionScreen> {
                       customer.name,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
-                    subtitle: Text(customer.phone),
+                    subtitle: Text(displayPhone(customer.phone)),
                     trailing: AppTourTarget(
                       id: TipTargets.bookingCustomer,
                       child: FilledButton.tonal(

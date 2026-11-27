@@ -23,13 +23,17 @@ import { localBackend, options } from './runtime.js';
 // customer), so leaving them out loses no refresh and saves one trigger run
 // and one reload of every connected app per write.
 const ignored = new Set(['liveSignals', 'entityCommandReceipts', 'noticeMarkers', 'transportQuotes', 'transportPetLocks',
-  'serviceCommandReceipts', 'recordSequences', 'managerActivationEvents', 'workforceEvents', 'petCustody', 'tutorInvites']);
+  'serviceCommandReceipts', 'recordSequences', 'managerActivationEvents', 'workforceEvents', 'petCustody', 'tutorInvites',
+  // Driver position, reported every few seconds on the way: the tutor card and
+  // the team read it on their own (driver_location.js), without a reload.
+  'driverLocations']);
 // Removed only by the automatic cleanup (TTL), after they stopped being shown:
 // getNotices already hides expired notices, so the deletion changes no screen.
 const purgedOnDelete = new Set(['notices']);
 const catalog = new Set(['services', 'settings', 'blocks', 'scheduleDays', 'professionals']);
 // Petshop records whose own fields say which tutors see them.
-const tutorRecords = new Set(['customers', 'appointments', 'transports', 'transportRequests', 'notices', 'members']);
+// petBlocks: "Não atender este pet", one document per customer (customerId).
+const tutorRecords = new Set(['customers', 'appointments', 'transports', 'transportRequests', 'notices', 'members', 'petBlocks']);
 const signalOptions = { region: options.region, maxInstances: options.maxInstances };
 
 /// Fields the rules read from a changed document, before and after the change.
@@ -68,7 +72,7 @@ async function appointmentCustomers(db, tenantId, appointmentIds) {
 export async function affectedTutors(db, tenantId, collection, event) {
   const docId = event.params.docId;
   if (collection === 'customers') return values(event, 'tutorUid');
-  if (collection === 'appointments') return customerTutors(db, tenantId, values(event, 'customerId'));
+  if (collection === 'appointments' || collection === 'petBlocks') return customerTutors(db, tenantId, values(event, 'customerId'));
   if (collection === 'transports' || collection === 'transportRequests') {
     const direct = values(event, 'tutorUid');
     const customers = [...values(event, 'customerId'),

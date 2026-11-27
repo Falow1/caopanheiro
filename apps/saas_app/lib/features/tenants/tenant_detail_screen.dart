@@ -1,4 +1,5 @@
-import 'package:caopanheiro_core/caopanheiro_core.dart' show recordNumberLabel;
+import 'package:caopanheiro_core/caopanheiro_core.dart'
+    show displayPhone, recordNumberLabel;
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show
@@ -51,7 +52,7 @@ class TenantDetailScreen extends StatelessWidget {
                   _Info(label: 'Responsável', value: tenant.responsible),
                   _Info(
                     label: 'Contato',
-                    value: '${tenant.email}\n${tenant.phone}',
+                    value: '${tenant.email}\n${displayPhone(tenant.phone)}',
                   ),
                   _Info(
                     label: 'Localização',

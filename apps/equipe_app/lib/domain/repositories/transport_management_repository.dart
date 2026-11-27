@@ -37,10 +37,62 @@ class TransportRequest {
   final String? conflictAcknowledgement;
 }
 
+/// Position of the driver of a transport, read on demand by the team
+/// (backend/src/driver_location.js). Without a report since the transport
+/// left, or after it ends, there is no position.
+class DriverPosition {
+  const DriverPosition({
+    required this.onRoute,
+    required this.checkedAt,
+    this.latitude,
+    this.longitude,
+    this.accuracy,
+    this.reportedAt,
+  });
+  factory DriverPosition.fromJson(Map<String, dynamic> v) {
+    final location = v['location'] is Map
+        ? Map<String, dynamic>.from(v['location'] as Map)
+        : null;
+    return DriverPosition(
+      onRoute: v['onRoute'] == true,
+      checkedAt: DateTime.parse(v['checkedAt'] as String).toLocal(),
+      latitude: (location?['lat'] as num?)?.toDouble(),
+      longitude: (location?['lng'] as num?)?.toDouble(),
+      accuracy: (location?['accuracy'] as num?)?.round(),
+      reportedAt: location == null
+          ? null
+          : DateTime.parse(location['reportedAt'] as String).toLocal(),
+    );
+  }
+  final bool onRoute;
+  final DateTime checkedAt;
+  final double? latitude;
+  final double? longitude;
+
+  /// Meters, as reported by the phone of the driver.
+  final int? accuracy;
+  final DateTime? reportedAt;
+  bool get hasPosition =>
+      latitude != null && longitude != null && reportedAt != null;
+}
+
+abstract interface class DriverPositionRepository {
+  Future<DriverPosition> transportLocation(String transportId);
+}
+
+/// Driving minutes between two typed addresses, by the streets.
+abstract interface class TripEstimateRepository {
+  Future<int> estimateTripMinutes(
+    Map<String, String> origin,
+    Map<String, String> destination,
+  );
+}
+
 abstract interface class TransportManagementRepository {
   Future<List<CompanyDriver>> getDrivers();
   Future<void> createTransport(TransportRequest request);
   Future<List<ManagedTransport>> getTransports({String? appointmentId});
+
   /// With [appointmentId], [at] is a company wall clock read in the zone of
   /// that appointment; otherwise it is the instant of an existing transport.
   Future<TransportConflictPreview> conflicts(

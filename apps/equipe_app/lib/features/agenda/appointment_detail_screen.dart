@@ -1,10 +1,11 @@
+import 'package:caopanheiro_core/caopanheiro_core.dart' show displayPhone;
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppRefreshBody;
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppOfflineBanner;
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppScreenTips, AppTourTarget;
+    show AppPetIcon, AppScreenTips, AppTourTarget;
 import '../../core/screen_tips.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show
@@ -89,7 +90,7 @@ class AppointmentDetailScreen extends StatelessWidget {
                     _Line(
                       icon: Icons.phone_outlined,
                       label: 'Contato',
-                      value: item.customer.phone,
+                      value: displayPhone(item.customer.phone),
                     ),
                     _Line(
                       icon: Icons.calendar_today_outlined,
@@ -133,6 +134,7 @@ class AppointmentDetailScreen extends StatelessWidget {
                     label: const Text('Agendar transporte'),
                   ),
                 ),
+              const SizedBox(height: 10),
               AppTourTarget(
                 id: TipTargets.appointmentTransport,
                 child: OutlinedButton.icon(
@@ -148,10 +150,15 @@ class AppointmentDetailScreen extends StatelessWidget {
                             ),
                           ),
                         ),
-                  icon: const Icon(Icons.local_shipping_outlined),
-                  label: const Text('Gerenciar transportes deste agendamento'),
+                  icon: const Icon(Icons.route_outlined),
+                  // Centered like the button above, even on two lines.
+                  label: const Text(
+                    'Gerenciar transportes',
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ),
+              const SizedBox(height: 12),
               const SectionTitle('Pets e serviços'),
               AppTourTarget(
                 id: TipTargets.appointmentPets,
@@ -166,9 +173,10 @@ class AppointmentDetailScreen extends StatelessWidget {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                entry.pet.emoji,
-                                style: const TextStyle(fontSize: 30),
+                              AppPetIcon(
+                                icon: entry.pet.breedIcon,
+                                size: 44,
+                                semanticLabel: entry.pet.breed,
                               ),
                               const SizedBox(width: 13),
                               Expanded(
@@ -333,7 +341,12 @@ class AppointmentDetailScreen extends StatelessWidget {
                   AppointmentStatus.petReceived,
                 ),
           icon: const Icon(Icons.pets_rounded),
-          label: const Text('Registrar recebimento de todos os pets'),
+          // One pet or all of them, as the appointment has.
+          label: Text(
+            item.items.map((entry) => entry.pet.id).toSet().length > 1
+                ? 'Registrar recebimento de todos os pets'
+                : 'Registrar recebimento do pet',
+          ),
         ),
       );
       widgets.add(const SizedBox(height: 10));

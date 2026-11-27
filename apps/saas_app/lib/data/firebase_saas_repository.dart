@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:caopanheiro_core/caopanheiro_core.dart';
 
 import '../domain/models.dart';
@@ -5,6 +7,7 @@ import '../domain/repositories/saas_repository.dart';
 import '../domain/repositories/saas_session.dart';
 import '../domain/repositories/saas_administration.dart';
 import '../domain/repositories/saas_extras.dart';
+import 'push_device.dart';
 
 Map<String, dynamic> _map(dynamic value) =>
     Map<String, dynamic>.from(value as Map);
@@ -58,6 +61,7 @@ class FirebaseSaasRepository
         SaasAdministration,
         SaasGoogleAccess,
         SaasSupportDesk,
+        SaasBreedSuggestions,
         SaasBillingDesk,
         SaasRenewalDesk,
         LiveSignalsAware,
@@ -240,8 +244,7 @@ class FirebaseSaasRepository
           ownerName: v['ownerName'] as String? ?? '',
           amountCents: (v['amountCents'] as num?)?.toInt() ?? 0,
           direction: v['direction'] as String? ?? 'CHARGE',
-          tenantNames: ((v['tenantNames'] as List?) ?? const [])
-              .cast<String>(),
+          tenantNames: ((v['tenantNames'] as List?) ?? const []).cast<String>(),
           fromPlanName: v['fromPlanName'] as String?,
           toPlanName: v['toPlanName'] as String?,
           days: (v['days'] as num?)?.toInt(),
@@ -283,6 +286,51 @@ class FirebaseSaasRepository
     'reason': reason,
   });
 
+  /// Read online only, without the offline copy: it is not needed to run
+  /// the platform and carries no personal data.
+  @override
+  Future<List<BreedSuggestion>> breedSuggestions() async {
+    final epoch = _epoch, uid = _gateway.uid;
+    await _context();
+    final rows = <BreedSuggestion>[];
+    String? cursor;
+    do {
+      final value = await _gateway.call('getSaasData', {
+        'resource': 'breedSuggestions',
+        'cursor': cursor,
+      });
+      _check(epoch, uid);
+      for (final item in value['items'] as List) {
+        final v = _map(item);
+        rows.add(
+          BreedSuggestion(
+            id: v['id'] as String,
+            name: v['name'] as String? ?? '',
+            species: v['species'] as String? ?? '',
+            count: (v['count'] as num?)?.toInt() ?? 1,
+            lastAt: v['lastAt'] == null ? null : _date(v['lastAt']),
+          ),
+        );
+      }
+      cursor = value['nextCursor'] as String?;
+    } while (cursor != null);
+    return rows;
+  }
+
+  @override
+  Future<void> removeBreedSuggestion(String id) async {
+    if (readOnly) {
+      throw const FormatException(
+        'Conecte-se e atualize para administrar a plataforma.',
+      );
+    }
+    final epoch = _epoch, uid = _gateway.uid;
+    await _commands.run('removeBreedSuggestion', {
+      'suggestionId': id,
+    }, _gateway.call);
+    _check(epoch, uid);
+  }
+
   @override
   Future<void> replySupportRequest(
     String id,
@@ -303,6 +351,7 @@ class FirebaseSaasRepository
     }
     try {
       await _context();
+      if (!requiresEmailCode) _registerPush();
     } on NetworkException {
       final scopes = await _cache.scopes(uid);
       if (scopes.length != 1 || scopes.single['id'] != 'platform') return null;
@@ -537,12 +586,10 @@ class FirebaseSaasRepository
         'active': active,
       });
   @override
-  Future<void> deleteManagerAccount(String tenantId, String userId) =>
-      _write('deleteManagerAccount', {
-        'tenantId': tenantId,
-        'userId': userId,
-        'confirmed': true,
-      });
+  Future<void> deleteManagerAccount(String tenantId, String userId) => _write(
+    'deleteManagerAccount',
+    {'tenantId': tenantId, 'userId': userId, 'confirmed': true},
+  );
   @override
   Future<void> savePlan(Plan plan) => _write('savePlan', {
     'planId': plan.id,
@@ -596,8 +643,18 @@ class FirebaseSaasRepository
     }
     await _gateway.call('recordSaasSession', {});
     _emailChallenge = null;
+    _registerPush();
     return _admin(_profile!);
   }
+
+  /// This device in the push notifications of the subscription and support
+  /// requests, once the administrative session is confirmed. A refusal or a
+  /// failure never changes the entry.
+  late final _push = PushDevice(
+    'saas',
+    (name, data) => _gateway.call(name, data),
+  );
+  void _registerPush() => unawaited(_push.register().catchError((Object _) {}));
 
   @override
   Future<void> changePassword(String currentPassword, String password) async {
@@ -668,6 +725,8 @@ class FirebaseSaasRepository
     cacheWarning = null;
     _commands.clear();
     _ending = _ending.catchError((Object _) {}).then((_) async {
+      // While the session still calls the server.
+      await _push.unregister();
       try {
         await _cache.clear();
       } finally {

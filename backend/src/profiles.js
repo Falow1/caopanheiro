@@ -9,6 +9,8 @@ import { actor, email, identifier, invalid, localBackend, object, options, teamA
 import { brazilPhone } from './contact_policy.js';
 import { metadata, teamCommand } from './team_commands.js';
 import { jsonCustomer } from './customers.js';
+import { keepLegacyBreed, normalizedPet, petBlocksRef, petInput, petPolicyRef, petServiceContext, publicPetPolicy, refuseUnservedPet, servedCustomer, storedPetPolicy } from './pet_policy.js';
+import { recordBreedSuggestion } from './pet_service.js';
 import { jsonAppointment, tutorView } from './scheduling.js';
 import { tutorOwnsCustomer } from './tutor_access.js';
 import { BILLING_BLOCKED, BILLING_GRACE, BOOKINGS_PAUSED, companySuspended, tutorReadOnly } from './access_policy.js';
@@ -86,7 +88,10 @@ export const getProfileData=onCall(options,async(request)=>{
     if(resource==='customer'){
       const customerId=identifier(access.member.get('customerId'),'Cliente');const customer=await tx.get(db.doc(`tenants/${tenantId}/customers/${customerId}`));
       if(!customer.exists||customer.get('tutorUid')!==uid)throw new HttpsError('permission-denied','Cadastro não vinculado a esta conta.');
-      return{items:[jsonCustomer(customer)],nextCursor:null};
+      // Each pet says whether the petshop serves it; a block reaches the tutor
+      // without its internal reason, with the petshop phone.
+      const context=await petServiceContext(tx,db,tenantId,[customerId]);
+      return{items:[servedCustomer(jsonCustomer(customer),context,{team:false,contactPhone:access.tenant.get('phone')??''})],petPolicy:publicPetPolicy(context.policy),nextCursor:null};
     }
     const collection=resource==='services'?'services':resource;
     let query=db.collection(`tenants/${tenantId}/${collection}`);
@@ -136,18 +141,41 @@ export const updateTutorProfile=onCall(options,async(request)=>{
   },['TUTOR']);
 });
 
+/// Each person of the team edits their own name and phone, never the e-mail
+/// of the login. The change reaches every company where they work.
+export const updateOwnTeamProfile=onCall(options,async(request)=>{
+  object(request.data,['name','phone'],'Pedido');
+  const name=text(request.data.name,'Nome',100,2);const phone=brazilPhone(text(request.data.phone,'Telefone',32,8));
+  const db=localBackend();const uid=await actor(request);
+  const links=await db.collection(`users/${uid}/tenantLinks`).limit(51).get();if(links.size>50)throw new HttpsError('failed-precondition','Quantidade de vínculos requer revisão administrativa.');
+  await db.runTransaction(async(tx)=>{
+    const refs=links.docs.map((link)=>db.doc(`tenants/${identifier(link.id,'Empresa')}/members/${uid}`));
+    const members=(refs.length?await tx.getAll(...refs):[]).filter((doc)=>doc.exists&&doc.get('active')===true&&(doc.get('roles')??[]).some((role)=>role!=='TUTOR'));
+    if(!members.length)throw new HttpsError('permission-denied','Sua conta não possui vínculo ativo de equipe.');
+    const professionalRefs=members.filter((doc)=>typeof doc.get('professionalId')==='string').map((doc)=>db.doc(`${doc.ref.parent.parent.path}/professionals/${identifier(doc.get('professionalId'),'Profissional')}`));
+    const professionals=professionalRefs.length?await tx.getAll(...professionalRefs):[];
+    tx.set(db.doc(`users/${uid}`),{name,phone},{merge:true});
+    for(const doc of members)tx.update(doc.ref,{name,phone,...metadata(uid,true)});
+    for(const doc of professionals)if(doc.exists&&doc.get('authUid')===uid)tx.update(doc.ref,{name,...metadata(uid,true)});
+  });
+  return{profile:{name,phone}};
+});
+
 export const saveTutorPet=onCall(options,async(request)=>{
-  object(request.data,['tenantId','requestId','petId','pet'],'Pedido');const petId=identifier(request.data.petId,'Pet');const input=request.data.pet;
-  object(input,['name','species','breed','size','birthDate','notes'],'Pet');
-  const birthDate=text(input.birthDate,'Nascimento',10,10);const parsed=new Date(`${birthDate}T00:00:00.000Z`);
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)||!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==birthDate||birthDate>new Date().toISOString().slice(0,10))invalid('Nascimento inválido.');
-  const pet={id:petId,name:text(input.name,'Nome',100,1),species:text(input.species,'Espécie',30,1),breed:text(input.breed,'Raça',100,1),size:text(input.size,'Porte',30,1),birthDate,notes:text(input.notes??'','Observações',2000)};
-  if(!['Cachorro','Gato'].includes(pet.species)||!['Pequeno','Médio','Grande'].includes(pet.size))invalid('Espécie ou porte inválido.');
-  return teamCommand(request,'saveTutorPet',{pet},async({db,tx,tenantId,uid,access})=>{
-    const customerId=identifier(access.member.get('customerId'),'Cliente');const ref=db.doc(`tenants/${tenantId}/customers/${customerId}`);const previous=await tx.get(ref);
+  object(request.data,['tenantId','requestId','petId','pet'],'Pedido');const petId=identifier(request.data.petId,'Pet');
+  const{pet:input,suggestion}=petInput(request.data.pet,petId);
+  return teamCommand(request,'saveTutorPet',{pet:input,suggestion},async({db,tx,tenantId,uid,access})=>{
+    const customerId=identifier(access.member.get('customerId'),'Cliente');const ref=db.doc(`tenants/${tenantId}/customers/${customerId}`);
+    const[previous,policyDoc,blocks]=await tx.getAll(ref,petPolicyRef(db,tenantId),petBlocksRef(db,tenantId,customerId));
     if(!previous.exists||previous.get('tutorUid')!==uid)throw new HttpsError('permission-denied','Cadastro não vinculado.');
     const pets=previous.get('pets')??{};if(!pets[petId]&&Object.keys(pets).length>=100)invalid('Limite de pets atingido.');
+    const before=pets[petId]?normalizedPet(pets[petId]):null;const pet=keepLegacyBreed({...input},before);const policy=storedPetPolicy(policyDoc);
+    // Only a breed the petshop serves can be added or chosen; the tutor reads the rule, never a block reason.
+    if(!before||before.breedCode!==pet.breedCode)refuseUnservedPet(policy,pet,{tutor:true,petshop:access.tenant.get('tradeName')??'O petshop'});
     [pet.recordNumber]=await allocateRecordNumbers(tx,db,tenantId,[{type:'pets',id:petNumberId(customerId,petId),recordNumber:pets[petId]?.recordNumber}]);
-    tx.update(ref,{[`pets.${petId}`]:pet,...metadata(uid,true)});return{pet};
+    tx.update(ref,{[`pets.${petId}`]:pet,...metadata(uid,true)});
+    if(suggestion)recordBreedSuggestion(tx,db,pet.species,suggestion);
+    const[served]=servedCustomer({id:customerId,pets:[pet]},{policy,blocks:new Map([[customerId,blocks.get('pets')??{}]])},{team:false,contactPhone:access.tenant.get('phone')??''}).pets;
+    return{pet:served};
   },['TUTOR']);
 });

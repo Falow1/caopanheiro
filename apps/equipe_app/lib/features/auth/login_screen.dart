@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'login_code_gate.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show
         AppGoogleButton,
@@ -84,7 +85,8 @@ class _LoginScreenState extends State<LoginScreen> {
             final sent = await controller.requestManagerPassword(email);
             final failure = sent
                 ? null
-                : controller.error ?? 'Não foi possível enviar. Tente novamente.';
+                : controller.error ??
+                      'Não foi possível enviar. Tente novamente.';
             controller.clearError();
             return failure;
           },
@@ -128,13 +130,16 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => controller.pausedAccess.isNotEmpty
-                ? const AccessPausedScreen()
-                : controller.catalogOnly && controller.user == null
-                ? const CompanySelectionScreen()
-                : controller.unified
-                ? const UnifiedShell()
-                : MainShell(initialIndex: controller.catalogOnly ? 2 : 0),
+            builder: (_) => LoginCodeGate(
+              email: _email.text.trim(),
+              child: controller.pausedAccess.isNotEmpty
+                  ? const AccessPausedScreen()
+                  : controller.catalogOnly && controller.user == null
+                  ? const CompanySelectionScreen()
+                  : controller.unified
+                  ? const UnifiedShell()
+                  : MainShell(initialIndex: controller.catalogOnly ? 2 : 0),
+            ),
           ),
         );
       } else {
@@ -174,13 +179,16 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => controller.pausedAccess.isNotEmpty
-                ? const AccessPausedScreen()
-                : controller.catalogOnly && controller.user == null
-                ? const CompanySelectionScreen()
-                : controller.unified
-                ? const UnifiedShell()
-                : MainShell(initialIndex: controller.catalogOnly ? 2 : 0),
+            builder: (_) => LoginCodeGate(
+              email: _email.text.trim(),
+              child: controller.pausedAccess.isNotEmpty
+                  ? const AccessPausedScreen()
+                  : controller.catalogOnly && controller.user == null
+                  ? const CompanySelectionScreen()
+                  : controller.unified
+                  ? const UnifiedShell()
+                  : MainShell(initialIndex: controller.catalogOnly ? 2 : 0),
+            ),
           ),
         );
       }

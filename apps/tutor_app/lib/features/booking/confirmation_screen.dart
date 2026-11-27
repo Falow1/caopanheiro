@@ -4,7 +4,7 @@ import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
 import '../../core/screen_tips.dart';
 import 'package:flutter/services.dart' show MaxLengthEnforcement;
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppContentCard, AppStatusBadge, AppTextStyles;
+    show AppContentCard, AppPetIcon, AppStatusBadge, AppTextStyles;
 
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
@@ -44,9 +44,9 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
       await _reviewChange(context, controller.serviceQuoteChange!);
     }
     if (saved && context.mounted && draft.reschedule) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Agendamento remarcado.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Agendamento remarcado.')));
       // Back to the appointment: review and schedule screens are closed.
       Navigator.of(context)
         ..pop()
@@ -209,7 +209,7 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(pet.emoji, style: const TextStyle(fontSize: 27)),
+                          AppPetIcon(icon: pet.breedIcon, size: 40),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -217,9 +217,9 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
                               children: [
                                 Text(
                                   pet.name,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
                                 ),
                                 const SizedBox(height: 3),
                                 Text(
@@ -301,6 +301,15 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
           ),
           const SizedBox(height: 16),
         ],
+        if (!draft.reschedule) ...[
+          _PaymentDemo(
+            selected: draft.paymentMethod,
+            enabled: !controller.busy,
+            onSelected: (method) =>
+                setState(() => draft.paymentMethod = method),
+          ),
+          const SizedBox(height: 16),
+        ],
         TextField(
           controller: _tutorNotes,
           enabled: !controller.busy,
@@ -339,6 +348,74 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
       ],
     );
   }
+}
+
+/// How the tutor intends to pay. Demonstration only: nothing is charged and
+/// the choice stays in this phone.
+const paymentDemoMethods = [
+  ('PIX', 'Pix', 'QR Code do Pix no petshop ou na entrega'),
+  ('CASH', 'Dinheiro', 'No petshop ou na entrega do pet'),
+  (
+    'CARD_MACHINE',
+    'Máquina móvel',
+    'Cartão na maquininha, no petshop ou na entrega',
+  ),
+  ('APP', 'Pagar pelo app', 'Cartão ou Pix pelo aplicativo'),
+];
+
+class _PaymentDemo extends StatelessWidget {
+  const _PaymentDemo({
+    required this.selected,
+    required this.enabled,
+    required this.onSelected,
+  });
+  final String? selected;
+  final bool enabled;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text('Pagamento', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 4),
+      const Text(
+        'Escolha como prefere pagar no dia do atendimento.',
+        style: AppTextStyles.captionMuted,
+      ),
+      const SizedBox(height: 12),
+      BookingGrid(
+        sameHeight: true,
+        children: [
+          for (final (id, title, subtitle) in paymentDemoMethods)
+            BookingCheckCard(
+              key: ValueKey('payment-$id'),
+              title: title,
+              subtitle: subtitle,
+              selected: selected == id,
+              onTap: enabled ? () => onSelected(id) : null,
+            ),
+        ],
+      ),
+      AppContentCard(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.info_outline_rounded, color: AppColors.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                selected == 'APP'
+                    ? 'Versão de demonstração: o pagamento pelo app ainda não está disponível e nada será cobrado. Pague no petshop.'
+                    : 'Versão de demonstração: nenhum valor é cobrado agora e a escolha ainda não é enviada ao petshop. Combine o pagamento com a equipe.',
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
 }
 
 class _SummaryLine extends StatelessWidget {

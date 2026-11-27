@@ -1,8 +1,11 @@
 package com.caopanheiro.internal
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
@@ -16,8 +19,14 @@ import io.flutter.plugin.common.MethodChannel
  * manager pick the folder, and the file is written where they chose. No
  * permission is needed. The answer to Flutter is "saved", "cancelled" or an
  * error.
+ *
+ * Notification permission (Android 13+), asked when the driver's live
+ * position starts: without it, the fixed notification of the position
+ * service stays out of the notification shade. The answer is true when
+ * notifications can be shown.
  */
 class MainActivity : FlutterActivity() {
+    private var asking: MethodChannel.Result? = null
     private var pending: MethodChannel.Result? = null
     private var content: ByteArray? = null
     private val allowedTypes = setOf("image/png", "text/csv")
@@ -43,6 +52,32 @@ class MainActivity : FlutterActivity() {
                     else -> askWhere(name, bytes, mime, result)
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTICES_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when {
+                    call.method != "requestNotifications" -> result.notImplemented()
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                        PackageManager.PERMISSION_GRANTED -> result.success(true)
+                    asking != null -> result.success(false)
+                    else -> {
+                        asking = result
+                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTICES_REQUEST)
+                    }
+                }
+            }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != NOTICES_REQUEST) return
+        val result = asking ?: return
+        asking = null
+        result.success(grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED)
     }
 
     private fun askWhere(name: String, bytes: ByteArray, mime: String, result: MethodChannel.Result) {
@@ -95,5 +130,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL = "caopanheiro/files"
         private const val SAVE_REQUEST = 4107
+        private const val NOTICES_CHANNEL = "caopanheiro/notifications"
+        private const val NOTICES_REQUEST = 4108
     }
 }

@@ -163,7 +163,7 @@ export const getTeamContext = onCall(options, async (request) => {
     const role = availableRoles[0] ?? null;
     const notice = phaseView(billing, owner);
     if (role) companies.push({ id, recordNumber: tenant.get('recordNumber') ?? null, name: tenant.get('tradeName') ?? id,
-      userName: member.get('name') ?? 'Equipe', role, roles: availableRoles, entitlements: { tutorApp: tenantFeature(subscription, 'tutorApp'), transport: tenantFeature(subscription, 'transport'), onlinePayment: tenantFeature(subscription, 'onlinePayment') }, managementDelegated: member.get('managementDelegated') === true, managementPermissions: effectiveManagementPermissions(member.data()),
+      userName: member.get('name') ?? 'Equipe', userPhone: member.get('phone') ?? '', role, roles: availableRoles, entitlements: { tutorApp: tenantFeature(subscription, 'tutorApp'), transport: tenantFeature(subscription, 'transport'), onlinePayment: tenantFeature(subscription, 'onlinePayment') }, managementDelegated: member.get('managementDelegated') === true, managementPermissions: effectiveManagementPermissions(member.data()),
       ...(notice ? { billing: notice } : {}) });
   }
   pausedCompanies.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
@@ -176,22 +176,26 @@ export const getTeamContext = onCall(options, async (request) => {
 });
 
 export { getTeamCustomers, saveCustomer, savePet, createTutorLink, acceptTutorLink } from './customers.js';
+export { getPetPolicy, savePetPolicy, blockPet, unblockPet } from './pet_service.js';
 
 export { getAvailableSlots, saveAppointment, updateAppointmentNotes, updateAppointmentStatus, getTeamResource, getSchedulingPolicy, saveSchedulingPolicy, saveProfessional, saveBlock, removeBlock } from './scheduling.js';
 
-export { getApplicationContext, getProfileData, addServiceObservation, updateTutorProfile, saveTutorPet } from './profiles.js';
+export { getApplicationContext, getProfileData, addServiceObservation, updateTutorProfile, updateOwnTeamProfile, saveTutorPet } from './profiles.js';
 export { getCompanyDrivers, createTransport, transitionTransport, addTransportIncident } from './transports.js';
 
-export { getSaasContext, getSaasData, saveTenant, setTenantStatus, savePlan, updateSubscription, saveTenantMember, setTenantUserActive } from './saas.js';
+export { getSaasContext, getSaasData, saveTenant, setTenantStatus, savePlan, updateSubscription, saveTenantMember, setTenantUserActive, removeBreedSuggestion } from './saas.js';
 
 export { getSaasDiagnostics } from './saas.js';
 export { recordSaasSession, changeSaasPassword, getSaasHealth, live, ready } from './saas_security.js';
 
 export { requestSaasEmailCode, verifySaasEmailCode } from './saas_email.js';
+export { requestLoginCode, verifyLoginCode } from './login_code.js';
+export { registerPushToken, unregisterPushToken } from './push_tokens.js';
 
 export { getTransportConflicts, getCompanyTransports, reassignTransport, manageTransportIncident, checkTransportPets } from './transport_operations.js';
 
-export {getTransportPolicy,saveTransportPolicy,searchTransportAddress,quoteTutorTransport,getTransportRequests,decideTransportRequest,getTutorTransportTracking,requestTutorTransport} from './transport_booking.js';
+export {getTransportPolicy,saveTransportPolicy,searchTransportAddress,estimateTransportTrip,quoteTutorTransport,getTransportRequests,decideTransportRequest,getTutorTransportTracking,requestTutorTransport} from './transport_booking.js';
+export { reportDriverLocation, getTransportLocation } from './driver_location.js';
 
 export { getManagerActivation, completeManagerActivation } from './manager_activation.js';
 

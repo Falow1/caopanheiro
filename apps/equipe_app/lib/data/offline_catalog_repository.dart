@@ -1,3 +1,7 @@
+import '../domain/repositories/own_team_profile_repository.dart';
+import 'firebase_local_repository.dart' show FirebaseLocalRepository;
+import '../domain/repositories/login_code_repository.dart';
+import '../domain/repositories/push_registration_repository.dart';
 import '../domain/repositories/company_view_repository.dart';
 import '../domain/repositories/customer_unlink_repository.dart';
 import '../domain/repositories/staff_link_repository.dart';
@@ -10,6 +14,9 @@ import '../domain/repositories/transport_management_repository.dart';
 import '../domain/repositories/transport_booking_repository.dart';
 import '../domain/repositories/team_extras_repository.dart';
 import '../domain/repositories/paused_access_repository.dart';
+import '../domain/repositories/pet_service_repository.dart';
+import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
+    show PetPolicy;
 
 import 'package:caopanheiro_core/caopanheiro_core.dart';
 
@@ -41,6 +48,12 @@ class OfflineCatalogRepository
         SchedulingRepository,
         AppointmentNotesRepository,
         TransportManagementRepository,
+        DriverPositionRepository,
+        TripEstimateRepository,
+        OwnTeamProfileRepository,
+        LoginCodeRepository,
+        PushRegistrationRepository,
+        PetServiceRepository,
         TransportBookingRepository,
         TeamExtrasRepository,
         PausedAccessRepository,
@@ -539,7 +552,10 @@ class OfflineCatalogRepository
     _check(epoch);
     final uid = _uid!;
     try {
-      final companies = await remote.getCompanies();
+      final source = remote;
+      final companies = source is FirebaseLocalRepository
+          ? await source.recentCompanies()
+          : await remote.getCompanies();
       _check(epoch);
       if (companies.isEmpty) {
         throw const FormatException('Nenhuma empresa autorizada.');
@@ -1199,6 +1215,36 @@ class OfflineCatalogRepository
     _check(epoch);
   }
 
+  Future<T> _petServiceOnline<T>(
+    Future<T> Function(PetServiceRepository) action,
+  ) async {
+    final epoch = _epoch;
+    _check(epoch);
+    if (offline) {
+      throw NetworkException('Pets atendidos exigem conexão.', _problem);
+    }
+    final Object source = remote;
+    if (source is! PetServiceRepository) {
+      throw const FormatException('Atualize a integração dos pets atendidos.');
+    }
+    final result = await _authorized(() => action(source));
+    _check(epoch);
+    return result;
+  }
+
+  @override
+  Future<PetPolicy> getPetPolicy() =>
+      _petServiceOnline((r) => r.getPetPolicy());
+  @override
+  Future<PetPolicy> savePetPolicy(PetPolicy policy, {String? tenantId}) =>
+      _petServiceOnline((r) => r.savePetPolicy(policy, tenantId: tenantId));
+  @override
+  Future<int> blockPet(String customerId, String petId, String reason) =>
+      _petServiceOnline((r) => r.blockPet(customerId, petId, reason));
+  @override
+  Future<void> unblockPet(String customerId, String petId) =>
+      _petServiceOnline((r) => r.unblockPet(customerId, petId));
+
   Future<T> _transportOnline<T>(
     Future<T> Function(TransportManagementRepository) action,
   ) async {
@@ -1251,6 +1297,54 @@ class OfflineCatalogRepository
     String message,
   ) => _transportOnline(
     (r) => r.manageIncident(transportId, incidentId, status, message),
+  );
+  @override
+  Future<DriverPosition> transportLocation(String transportId) =>
+      _transportOnline(
+        (r) => (r as DriverPositionRepository).transportLocation(transportId),
+      );
+  @override
+  Future<String> requestLoginCode() async {
+    if (offline) {
+      throw NetworkException('Conecte-se para receber o código.', _problem);
+    }
+    return (remote as LoginCodeRepository).requestLoginCode();
+  }
+
+  @override
+  Future<void> registerPush() async {
+    final Object source = remote;
+    if (!offline && source is PushRegistrationRepository) {
+      await source.registerPush();
+    }
+  }
+
+  @override
+  Future<void> verifyLoginCode(String challengeId, String code) async {
+    if (offline) {
+      throw NetworkException('Conecte-se para confirmar o código.', _problem);
+    }
+    await (remote as LoginCodeRepository).verifyLoginCode(challengeId, code);
+  }
+
+  @override
+  Future<void> updateOwnProfile(String name, String phone) async {
+    final epoch = _epoch;
+    _check(epoch);
+    if (offline) {
+      throw NetworkException('Conecte-se para salvar seus dados.', _problem);
+    }
+    await (remote as OwnTeamProfileRepository).updateOwnProfile(name, phone);
+    _check(epoch);
+  }
+
+  @override
+  Future<int> estimateTripMinutes(
+    Map<String, String> origin,
+    Map<String, String> destination,
+  ) => _transportOnline(
+    (r) =>
+        (r as TripEstimateRepository).estimateTripMinutes(origin, destination),
   );
   Future<T> _bookingOnline<T>(
     Future<T> Function(TransportBookingRepository) action,

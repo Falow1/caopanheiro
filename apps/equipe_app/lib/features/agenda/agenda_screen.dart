@@ -89,7 +89,10 @@ class _AgendaScreenState extends State<AgendaScreen> {
                   RoleNoticeBell(
                     source: controller.teamNotices,
                     tenantId: controller.company?.id,
-                    refreshKey: (controller.agendaUpdatedAt, controller.liveRevision),
+                    refreshKey: (
+                      controller.agendaUpdatedAt,
+                      controller.liveRevision,
+                    ),
                   ),
                   AppTourTarget(
                     id: TipTargets.agendaDay,
@@ -157,17 +160,20 @@ class _AgendaScreenState extends State<AgendaScreen> {
                       padding: TeamLayout.list,
                       itemCount: items.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 12),
-                      itemBuilder: (_, index) => AppTourTarget(id: TipTargets.agendaCard, child: _AppointmentCard(
-                        item: items[index],
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AppointmentDetailScreen(
-                              appointmentId: items[index].id,
+                      itemBuilder: (_, index) => AppTourTarget(
+                        id: TipTargets.agendaCard,
+                        child: _AppointmentCard(
+                          item: items[index],
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AppointmentDetailScreen(
+                                appointmentId: items[index].id,
+                              ),
                             ),
                           ),
                         ),
-                      )),
+                      ),
                     ),
             ),
           ],
@@ -177,14 +183,17 @@ class _AgendaScreenState extends State<AgendaScreen> {
           controller.catalogOffline ||
               controller.user?.canManage('APPOINTMENTS') != true
           ? null
-          : AppTourTarget(id: TipTargets.agendaNew, child: FloatingActionButton.extended(
-              heroTag: 'team-new-appointment',
-              onPressed: widget.onNew,
-              backgroundColor: AppColors.orange,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Novo agendamento'),
-            )),
+          : AppTourTarget(
+              id: TipTargets.agendaNew,
+              child: FloatingActionButton.extended(
+                heroTag: 'team-new-appointment',
+                onPressed: widget.onNew,
+                backgroundColor: AppColors.orange,
+                foregroundColor: Colors.white,
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Novo agendamento'),
+              ),
+            ),
     );
   }
 

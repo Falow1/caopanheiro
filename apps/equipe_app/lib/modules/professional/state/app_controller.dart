@@ -29,6 +29,7 @@ class AppController extends AppControllerBase with LiveFollowing {
     final Object repository = _repository;
     return repository is RoleNoticesSource && !readOnly ? repository : null;
   }
+
   bool get readOnly => _session?.readOnly ?? false;
 
   @override
@@ -111,6 +112,7 @@ class AppController extends AppControllerBase with LiveFollowing {
       rethrow;
     }
   });
+
   /// Live refresh of the professional's agenda in the open petshop.
   @override
   LiveSignalSource? get liveSource => _repository is LiveSignalsAware
@@ -130,6 +132,23 @@ class AppController extends AppControllerBase with LiveFollowing {
     final epoch = _epoch;
     final rows = await _repository.getAppointments(profile.id);
     if (epoch == _epoch) _appointments = rows;
+  }
+
+  /// Back to the app: the same reading without loading state, so the screen
+  /// keeps answering taps. A revoked access still ends the session.
+  Future<bool> refreshQuietly() async {
+    final epoch = _epoch;
+    var revoked = false;
+    final done = await runQuietly(() async {
+      try {
+        await liveReload();
+      } on SessionAccessException {
+        revoked = true;
+        rethrow;
+      }
+    });
+    if (revoked && epoch == _epoch) signOut();
+    return done;
   }
 
   Future<bool> refresh() => _guard(() async {

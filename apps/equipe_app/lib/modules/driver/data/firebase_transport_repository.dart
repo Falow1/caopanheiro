@@ -14,6 +14,7 @@ DateTime _date(dynamic value) => DateTime.parse(value as String).toLocal();
 class FirebaseTransportRepository
     implements
         TransportRepository,
+        DriverLocationReporter,
         DriverSession,
         AttachedSession,
         RoleNoticesSource,
@@ -432,6 +433,22 @@ class FirebaseTransportRepository
     'expectedStatus': expectedStatus.apiValue,
     'status': newStatus.apiValue,
   });
+  @override
+  Future<void> reportLocation(
+    String tenantId, {
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+  }) async {
+    await _gateway.call('reportDriverLocation', {
+      'tenantId': tenantId,
+      'lat': latitude,
+      'lng': longitude,
+      if (accuracy != null && accuracy.isFinite && accuracy >= 0)
+        'accuracy': accuracy,
+    });
+  }
+
   @override
   Future<TransportJob> addIncident(
     String id,

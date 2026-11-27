@@ -2,8 +2,9 @@ import { onCall } from './callable.js';
 import { Timestamp } from 'firebase-admin/firestore';
 import { actor, identifier, invalid, localBackend, object, options, teamAccess } from './runtime.js';
 
-// In-app notices: read when the app opens or refreshes. This is not push,
-// e-mail or SMS; nothing is delivered outside the application.
+// In-app notices: read when the app opens or refreshes. The server of the
+// Fly.io also sends each new notice as a push to the Equipe app of the people
+// of its channel (server/push_delivery.js); no e-mail or SMS.
 const RETENTION_MS = 60 * 86400000;
 const personalRoles = ['TUTOR', 'PROFESSIONAL', 'DRIVER'];
 const noticeRoles = ['TEAM', ...personalRoles];

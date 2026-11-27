@@ -14,6 +14,9 @@ export const retention = {
   mapCache: 30 * DAY,       // address search cache
   afterExpiry: 30 * DAY,    // tutor invitations, after their own expiry
   afterSession: 2 * DAY,    // SaaS administrative sessions, after expiry
+  location: DAY,            // driver position, renewed at each report on the way
+  pushToken: 60 * DAY,      // device of the push notifications, renewed at each login
+  pushLocal: 7 * DAY,       // push recorded instead of sent, in the emulators
 };
 
 export const purgeAt = (afterMs, fromMs = Date.now()) => Timestamp.fromMillis(fromMs + afterMs);

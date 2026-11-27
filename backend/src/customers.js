@@ -13,13 +13,21 @@ import { metadata, teamCommand } from './team_commands.js';
 import { joinTutorLink, requireTutorApp } from './tutor_join_link.js';
 import { tenantFeature } from './access_policy.js';
 import { purgeAt, retention } from './retention.js';
+import { keepLegacyBreed, normalizedPet, petBlocksRef, petInput, petPolicyRef, petServiceContext, publicPetPolicy, refuseUnservedPet, servedCustomer, storedPetPolicy } from './pet_policy.js';
+import { recordBreedSuggestion } from './pet_service.js';
 
 const customerFields = ['name', 'phone', 'email'];
-const petFields = ['name', 'species', 'breed', 'size', 'birthDate', 'notes'];
+export const sortedPets = (pets) => Object.values(pets ?? {}).map(normalizedPet).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 export function jsonCustomer(snapshot) {
   const value = snapshot.data();
   return { id: snapshot.id, recordNumber: value.recordNumber ?? null, name: value.name, phone: value.phone, email: value.email,
-    tutorUid: value.tutorUid ?? null, pets: Object.values(value.pets ?? {}).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')) };
+    tutorUid: value.tutorUid ?? null, pets: sortedPets(value.pets) };
+}
+/// Team view of customers: each pet says whether the petshop serves it and,
+/// when the team marked it, the block with its internal reason.
+export async function teamCustomers(reader, db, tenantId, snapshots) {
+  const context = await petServiceContext(reader, db, tenantId, snapshots.map((doc) => doc.id));
+  return { customers: snapshots.map((doc) => servedCustomer(jsonCustomer(doc), context, { team: true })), petPolicy: publicPetPolicy(context.policy) };
 }
 
 export const getTeamCustomers = onCall(options, async (request) => {
@@ -32,7 +40,8 @@ export const getTeamCustomers = onCall(options, async (request) => {
     let query = db.collection(`tenants/${tenantId}/customers`).orderBy(FieldPath.documentId()).limit(100);
     if (cursor) query = query.startAfter(cursor);
     const page = await tx.get(query);
-    return { customers: page.docs.map(jsonCustomer), nextCursor: page.size === 100 ? page.docs.at(-1).id : null };
+    const { customers, petPolicy } = await teamCustomers(tx, db, tenantId, page.docs);
+    return { customers, petPolicy, nextCursor: page.size === 100 ? page.docs.at(-1).id : null };
   });
 });
 
@@ -49,30 +58,32 @@ export const saveCustomer = onCall(options, async (request) => {
     if (previous.exists) tx.update(ref, patch);
     else tx.create(ref, { ...patch, pets: {}, tutorUid: null });
     // Customer edits never overwrite pets or assign a tutor UID.
-    return { customer: { id: customerId, recordNumber, ...customer, tutorUid: previous.get('tutorUid') ?? null, pets: Object.values(previous.get('pets') ?? {}) } };
+    return { customer: { id: customerId, recordNumber, ...customer, tutorUid: previous.get('tutorUid') ?? null, pets: sortedPets(previous.get('pets')) } };
   });
 });
 
 export const savePet = onCall(options, async (request) => {
   object(request.data, ['tenantId', 'requestId', 'customerId', 'petId', 'pet'], 'Pedido');
   const customerId = identifier(request.data.customerId, 'Cliente'); const petId = identifier(request.data.petId, 'Pet');
-  object(request.data.pet, petFields, 'Pet'); const value = request.data.pet;
-  const birthDate = text(value.birthDate, 'Nascimento', 10, 10);
-  const parsed = new Date(`${birthDate}T00:00:00.000Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || !Number.isFinite(parsed.getTime())
-    || parsed.toISOString().slice(0, 10) !== birthDate || birthDate > new Date().toISOString().slice(0, 10)) invalid('Nascimento inválido.');
-  const pet = { id: petId, name: text(value.name, 'Nome', 100, 1), species: text(value.species, 'Espécie', 30, 1),
-    breed: text(value.breed, 'Raça', 100, 1), size: text(value.size, 'Porte', 30, 1), birthDate,
-    notes: text(value.notes ?? '', 'Observações', 2000) };
-  if (!['Cachorro', 'Gato'].includes(pet.species) || !['Pequeno', 'Médio', 'Grande'].includes(pet.size)) invalid('Espécie ou porte inválido.');
-  return teamCommand(request, 'savePet', { customerId, pet }, async ({ db, tx, tenantId, uid }) => {
-    const ref = db.doc(`tenants/${tenantId}/customers/${customerId}`); const previous = await tx.get(ref);
+  const { pet: input, suggestion } = petInput(request.data.pet, petId);
+  return teamCommand(request, 'savePet', { customerId, pet: input, suggestion }, async ({ db, tx, tenantId, uid }) => {
+    const ref = db.doc(`tenants/${tenantId}/customers/${customerId}`);
+    const [previous, policyDoc, blocks] = await tx.getAll(ref, petPolicyRef(db, tenantId), petBlocksRef(db, tenantId, customerId));
     if (!previous.exists) throw new HttpsError('not-found', 'Cliente não encontrado.');
     const pets = previous.get('pets') ?? {};
     if (!pets[petId] && Object.keys(pets).length >= 100) invalid('Limite de pets deste cadastro atingido.');
+    // A pet of a tutor with the app is edited only by that tutor.
+    if (pets[petId] && previous.get('tutorUid')) throw new HttpsError('failed-precondition', 'Os dados deste pet são mantidos pelo tutor no app.');
+    const before = pets[petId] ? normalizedPet(pets[petId]) : null;
+    const pet = keepLegacyBreed({ ...input }, before); const policy = storedPetPolicy(policyDoc);
+    // A new pet or a new breed follows the rule of the petshop; the other
+    // data of a pet it no longer serves can still be edited.
+    if (!before || before.breedCode !== pet.breedCode) refuseUnservedPet(policy, pet);
     [pet.recordNumber] = await allocateRecordNumbers(tx, db, tenantId, [{type:'pets',id:petNumberId(customerId,petId),recordNumber:pets[petId]?.recordNumber}]);
     tx.update(ref, { [`pets.${petId}`]: pet, ...metadata(uid, true) });
-    return { customer: { ...jsonCustomer(previous), pets: Object.values({ ...pets, [petId]: pet }) } };
+    if (suggestion) recordBreedSuggestion(tx, db, pet.species, suggestion);
+    const customer = { ...jsonCustomer(previous), pets: sortedPets({ ...pets, [petId]: pet }) };
+    return { customer: servedCustomer(customer, { policy, blocks: new Map([[customerId, blocks.get('pets') ?? {}]]) }, { team: true }) };
   });
 });
 

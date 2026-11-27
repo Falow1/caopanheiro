@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppTextStyles;
+    show AppPetIcon, AppTextStyles;
 
 import '../../core/utils/formatters.dart';
 import '../../domain/models/pet.dart';
@@ -89,7 +89,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
               children: [
                 Row(
                   children: [
-                    Text(pet.emoji, style: const TextStyle(fontSize: 25)),
+                    AppPetIcon(icon: pet.breedIcon, size: 36),
                     const SizedBox(width: 9),
                     Text(
                       pet.name,

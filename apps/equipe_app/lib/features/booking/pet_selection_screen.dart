@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
+    show petServiceText;
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppRadii, AppTextStyles;
+    show AppPetIcon, AppRadii, AppTextStyles;
+import 'package:flutter/material.dart';
 
 import '../../core/app_theme.dart';
 import '../../core/widgets.dart';
@@ -37,26 +39,45 @@ class _PetSelectionScreenState extends State<PetSelectionScreen> {
                 const SizedBox(height: 20),
                 ...widget.customer.pets.map((pet) {
                   final selected = _selected.contains(pet.id);
+                  // A pet the petshop does not serve (rule or "Não atender
+                  // este pet") cannot be booked; the server refuses it too.
+                  final reason = pet.serviceReason;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: Card(
                       color: selected ? AppColors.mint : AppColors.paper,
                       child: CheckboxListTile(
                         value: selected,
+                        enabled: reason == null,
                         onChanged: (_) => setState(
                           () => selected
                               ? _selected.remove(pet.id)
                               : _selected.add(pet.id),
                         ),
-                        secondary: Text(
-                          pet.emoji,
-                          style: const TextStyle(fontSize: 30),
+                        secondary: Opacity(
+                          opacity: reason == null ? 1 : 0.45,
+                          child: AppPetIcon(
+                            icon: pet.breedIcon,
+                            size: 44,
+                            semanticLabel: pet.breed,
+                          ),
                         ),
                         title: Text(
                           pet.name,
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
-                        subtitle: Text(pet.breed),
+                        subtitle: Text(
+                          reason == null
+                              ? pet.breed
+                              : petServiceText(
+                                  reason,
+                                  petName: pet.name,
+                                  breed: pet.breedEntry,
+                                ),
+                          style: reason == null
+                              ? null
+                              : const TextStyle(color: AppColors.warning),
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: AppRadii.r20,
                         ),
@@ -97,7 +118,7 @@ class _PetSelectionScreenState extends State<PetSelectionScreen> {
                       final draft = BookingDraft(customer: widget.customer);
                       draft.pets.addAll(
                         widget.customer.pets.where(
-                          (pet) => _selected.contains(pet.id),
+                          (pet) => pet.served && _selected.contains(pet.id),
                         ),
                       );
                       for (final pet in draft.pets) {

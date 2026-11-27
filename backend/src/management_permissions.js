@@ -12,10 +12,10 @@ export function effectiveManagementPermissions(member) {
     ? [...managementPermissions] : managementPermissions.filter(p => Array.isArray(member.managementPermissions) && member.managementPermissions.includes(p));
 }
 const actions = {
-  saveCustomer:'CUSTOMERS',savePet:'CUSTOMERS',createTutorLink:'CUSTOMERS',getTutorJoinLink:'CUSTOMERS',
+  saveCustomer:'CUSTOMERS',savePet:'CUSTOMERS',createTutorLink:'CUSTOMERS',getTutorJoinLink:'CUSTOMERS',blockPet:'CUSTOMERS',unblockPet:'CUSTOMERS',
   saveAppointment:'APPOINTMENTS',updateAppointmentNotes:'APPOINTMENTS',updateAppointmentStatus:'APPOINTMENTS',addServiceObservation:'APPOINTMENTS',saveBlock:'APPOINTMENTS',removeBlock:'APPOINTMENTS',
   createService:'SERVICES',updateService:'SERVICES',deactivateService:'SERVICES',
-  saveProfessional:'PROFESSIONALS',saveSchedulingPolicy:'SETTINGS',saveTransportPolicy:'SETTINGS',
+  saveProfessional:'PROFESSIONALS',saveSchedulingPolicy:'SETTINGS',saveTransportPolicy:'SETTINGS',savePetPolicy:'SETTINGS',
   createTransport:'TRANSPORT',transitionTransport:'TRANSPORT',addTransportIncident:'TRANSPORT',decideTransportRequest:'TRANSPORT',reassignTransport:'TRANSPORT',manageTransportIncident:'TRANSPORT',checkTransportPets:'TRANSPORT',
 };
 export function requireManagementAction(member, action) {

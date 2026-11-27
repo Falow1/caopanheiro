@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paw of the push notifications: Android draws only its shape, in white,
+     in the status bar. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3.4,10.5a1.8,2.2 0,1 0,3.6 0a1.8,2.2 0,1 0,-3.6 0z M7.1,6.5a1.9,2.4 0,1 0,3.8 0a1.9,2.4 0,1 0,-3.8 0z M13.1,6.5a1.9,2.4 0,1 0,3.8 0a1.9,2.4 0,1 0,-3.8 0z M17,10.5a1.8,2.2 0,1 0,3.6 0a1.8,2.2 0,1 0,-3.6 0z M12,12.5c-2.6,0 -5.5,2.4 -5.5,5.2c0,1.6 1.2,2.6 2.7,2.6c1.1,0 1.9,-0.6 2.8,-0.6s1.7,0.6 2.8,0.6c1.5,0 2.7,-1 2.7,-2.6c0,-2.8 -2.9,-5.2 -5.5,-5.2z" />
+</vector>

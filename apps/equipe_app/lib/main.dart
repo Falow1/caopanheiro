@@ -5,6 +5,7 @@ import 'modules/professional/data/firebase_professional_repository.dart'
 import 'modules/professional/state/app_controller.dart' as pro;
 import 'modules/driver/data/firebase_transport_repository.dart' as driver_data;
 import 'modules/driver/state/app_controller.dart' as delivery;
+import 'modules/driver/core/location_sharing.dart' as driver_location;
 import 'package:flutter/material.dart';
 
 import 'app.dart';
@@ -38,6 +39,7 @@ Future<void> main() async {
         await SqlSnapshotCache.open('unified_driver_v1.db'),
       ),
       onSignOut: () => workforce.signOut(),
+      positions: const driver_location.DevicePositionSource(),
     );
     final controller = AppController(
       repository,

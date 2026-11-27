@@ -14,3 +14,8 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+flutter:
+  # Breed icons of the pets (AppPetIcon), 192 px WebP.
+  assets:
+    - assets/pet_breeds/

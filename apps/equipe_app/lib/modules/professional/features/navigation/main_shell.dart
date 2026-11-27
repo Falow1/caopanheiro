@@ -37,14 +37,16 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_refresh());
+    // Back to the app the reading runs quietly: the screen keeps answering
+    // taps while it runs.
+    if (state == AppLifecycleState.resumed) unawaited(_refresh(quiet: true));
   }
 
-  Future<void> _refresh() async {
+  Future<void> _refresh({bool quiet = false}) async {
     final controller = AppScope.of(context);
     final workforce = WorkforceScope.maybeOf(context);
     if (workforce != null && workforce.function?.name != 'professional') return;
-    await controller.refresh();
+    await (quiet ? controller.refreshQuietly() : controller.refresh());
     if (mounted &&
         workforce != null &&
         workforce.function?.name != 'professional') {

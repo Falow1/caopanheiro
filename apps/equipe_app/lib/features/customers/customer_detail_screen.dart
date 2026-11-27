@@ -1,3 +1,4 @@
+import 'package:caopanheiro_core/caopanheiro_core.dart' show displayPhone;
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppScreenTips, AppTourTarget;
@@ -16,6 +17,7 @@ import '../agenda/appointment_detail_screen.dart';
 import '../booking/pet_selection_screen.dart';
 import '../pets/pet_form_screen.dart';
 import 'customer_form_screen.dart';
+import 'customer_pet_card.dart';
 
 class CustomerDetailScreen extends StatelessWidget {
   const CustomerDetailScreen({super.key, required this.customerId});
@@ -76,7 +78,7 @@ class CustomerDetailScreen extends StatelessWidget {
                         customer.name,
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
-                      Text(customer.phone),
+                      Text(displayPhone(customer.phone)),
                       Text(customer.email),
                     ],
                   ),
@@ -249,38 +251,12 @@ class CustomerDetailScreen extends StatelessWidget {
                     ),
             ),
             ...customer.pets.map(
-              (pet) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Card(
-                  child: ListTile(
-                    onTap:
-                        controller.catalogOffline ||
-                            !controller.user!.canManage('CUSTOMERS')
-                        ? null
-                        : () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => PetFormScreen(
-                                customerId: customer.id,
-                                pet: pet,
-                              ),
-                            ),
-                          ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 7,
-                    ),
-                    leading: Text(
-                      pet.emoji,
-                      style: const TextStyle(fontSize: 30),
-                    ),
-                    title: Text(
-                      pet.name,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    subtitle: Text('${pet.species} · ${pet.breed}'),
-                    trailing: const Icon(Icons.edit_outlined, size: 20),
-                  ),
+              (pet) => AppTourTarget(
+                id: TipTargets.customerPet,
+                child: CustomerPetCard(
+                  customerId: customer.id,
+                  pet: pet,
+                  tutorManaged: customer.tutorUid != null,
                 ),
               ),
             ),

@@ -1,9 +1,11 @@
+import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
+    show petServiceText;
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppScreenTips, AppTourTarget;
 import '../../core/screen_tips.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppRadii;
+    show AppPetIcon, AppRadii;
 
 import '../../core/theme/app_theme.dart';
 import '../../domain/models/pet.dart';
@@ -34,7 +36,7 @@ class _PetSelectionScreenState extends State<PetSelectionScreen> {
   void _continue() {
     final pets = AppScope.of(
       context,
-    ).pets.where((pet) => _selected.contains(pet.id)).toList();
+    ).pets.where((pet) => pet.served && _selected.contains(pet.id)).toList();
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -56,7 +58,8 @@ class _PetSelectionScreenState extends State<PetSelectionScreen> {
   );
 
   Widget _content(BuildContext context) {
-    final pets = AppScope.of(context).pets;
+    final controller = AppScope.of(context);
+    final pets = controller.pets;
     return BookingFrame(
       title: 'Novo agendamento',
       step: 0,
@@ -92,6 +95,17 @@ class _PetSelectionScreenState extends State<PetSelectionScreen> {
                 child: _SelectablePet(
                   pet: pet,
                   selected: _selected.contains(pet.id),
+                  // A pet the petshop does not serve cannot be booked; the
+                  // server refuses it too.
+                  refusal: pet.serviceReason == null
+                      ? null
+                      : petServiceText(
+                          pet.serviceReason!,
+                          petName: pet.name,
+                          breed: pet.breedEntry,
+                          petshop: controller.companyName,
+                          tutor: true,
+                        ),
                   onTap: () => setState(
                     () => _selected.contains(pet.id)
                         ? _selected.remove(pet.id)
@@ -125,10 +139,14 @@ class _SelectablePet extends StatelessWidget {
     required this.pet,
     required this.selected,
     required this.onTap,
+    this.refusal,
   });
   final Pet pet;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Why the petshop does not serve the pet; then it cannot be chosen.
+  final String? refusal;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -141,13 +159,20 @@ class _SelectablePet extends StatelessWidget {
       ),
     ),
     child: InkWell(
-      onTap: onTap,
+      onTap: refusal == null ? onTap : null,
       borderRadius: AppRadii.r20,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            Text(pet.emoji, style: const TextStyle(fontSize: 34)),
+            Opacity(
+              opacity: refusal == null ? 1 : 0.45,
+              child: AppPetIcon(
+                icon: pet.breedIcon,
+                size: 52,
+                semanticLabel: pet.breed,
+              ),
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -158,28 +183,34 @@ class _SelectablePet extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   Text('${pet.species} · ${pet.breed}'),
+                  if (refusal != null)
+                    Text(
+                      refusal!,
+                      style: const TextStyle(color: AppColors.warning),
+                    ),
                 ],
               ),
             ),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                color: selected ? AppColors.primary : Colors.transparent,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: selected ? AppColors.primary : AppColors.muted,
+            if (refusal == null)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.primary : Colors.transparent,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected ? AppColors.primary : AppColors.muted,
+                  ),
                 ),
+                child: selected
+                    ? const Icon(
+                        Icons.check_rounded,
+                        size: 18,
+                        color: Colors.white,
+                      )
+                    : null,
               ),
-              child: selected
-                  ? const Icon(
-                      Icons.check_rounded,
-                      size: 18,
-                      color: Colors.white,
-                    )
-                  : null,
-            ),
           ],
         ),
       ),

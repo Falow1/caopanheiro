@@ -91,11 +91,15 @@ class _AppTipsScopeState extends State<AppTipsScope> {
     return best;
   }
 
+  /// Where the target is drawn on the window, scale and slide included.
   Rect? _area(String id) {
     final context = _target(id);
     if (context == null) return null;
     final box = context.findRenderObject()! as RenderBox;
-    return box.localToGlobal(Offset.zero) & box.size;
+    return MatrixUtils.transformRect(
+      box.getTransformTo(null),
+      Offset.zero & box.size,
+    );
   }
 
   /// Scrolls the target into the middle of its list when part of it is out
@@ -271,14 +275,21 @@ class _AppScreenTipsState extends State<AppScreenTips> {
     if (!store.tipsPending(widget.screen) || !AppTipsVisibility.of(context)) {
       return;
     }
-    final route = ModalRoute.of(context);
-    if (route != null && !route.isCurrent) return;
-    final animation = route?.animation;
-    if (animation != null && animation.status != AnimationStatus.completed) {
-      if (_waiting == null) {
-        _waiting = animation..addStatusListener(_routeSettled);
+    // The screen may sit in an inner navigator whose page is already in
+    // place while the page holding that navigator still slides in (right
+    // after signing in): every enclosing page has to be on top and still.
+    var route = ModalRoute.of(context);
+    while (route != null) {
+      if (!route.isCurrent) return;
+      final animation = route.animation;
+      if (animation != null && animation.status != AnimationStatus.completed) {
+        if (_waiting == null) {
+          _waiting = animation..addStatusListener(_routeSettled);
+        }
+        return;
       }
-      return;
+      final outer = route.navigator?.context;
+      route = outer == null || !outer.mounted ? null : ModalRoute.of(outer);
     }
     final scope = data.state;
     final steps = [
@@ -370,16 +381,53 @@ class _ScreenTour extends StatefulWidget {
   State<_ScreenTour> createState() => _ScreenTourState();
 }
 
+/// The tours on screen. After every frame the app draws for its own reasons
+/// (a page sliding in, a list loading), each one checks whether its target
+/// moved; it never asks for frames by itself.
+final _openTours = <_ScreenTourState>{};
+bool _watchingTargets = false;
+
+void _watchTargets() {
+  if (_watchingTargets) return;
+  _watchingTargets = true;
+  WidgetsBinding.instance.addPersistentFrameCallback((_) {
+    for (final tour in _openTours.toList()) {
+      tour._checkTarget();
+    }
+  });
+}
+
 class _ScreenTourState extends State<_ScreenTour> {
   int _index = 0;
-  bool _done = false;
+  bool _done = false, _moved = false;
+
+  /// Where the cut-out was drawn, to follow the target when it moves.
+  Rect? _shown;
 
   bool get _last => _index >= widget.steps.length - 1;
 
   @override
   void initState() {
     super.initState();
+    _openTours.add(this);
+    _watchTargets();
     _reveal();
+  }
+
+  @override
+  void dispose() {
+    _openTours.remove(this);
+    super.dispose();
+  }
+
+  void _checkTarget() {
+    if (_done || _moved || !mounted) return;
+    if (widget.steps[_index].locate() == _shown) return;
+    _moved = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _moved = false;
+      if (mounted) setState(() {});
+    });
   }
 
   /// Brings the target of the current tip into view, then measures again.
@@ -412,7 +460,7 @@ class _ScreenTourState extends State<_ScreenTour> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final size = constraints.biggest;
-          final area = step.locate();
+          final area = _shown = step.locate();
           final hole = area == null
               ? null
               : RRect.fromRectAndRadius(

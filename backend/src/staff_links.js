@@ -10,6 +10,7 @@ import { brazilPhone } from './contact_policy.js';
 import { teamCommand, metadata } from './team_commands.js';
 import { operationalRoles } from './workforce_policy.js';
 import { pendingStaff } from './staff_invitation_policy.js';
+import { requireDelegationAllowed } from './network_rule.js';
 import { staffSeatOccupied } from './manager_activation.js';
 import { staffMembers } from './staff_members.js';
 import { checkPassword } from './password_check.js';
@@ -112,6 +113,7 @@ export const acceptStaffLink = onCall(options, async request=>{
       throw new HttpsError('failed-precondition','A pessoa já possui acesso ou depende da administração do SaaS.');
     const {plan}=await capacity(tx,db,tenant,[inviteId,uid]);
     const roles=invite.get('invitedRoles'),management=invite.get('invitationKind')==='MANAGEMENT';
+    if(management)await requireDelegationAllowed(tx,db,uid,tenant.get('principalManagerUid')??invite.get('createdBy'));
     let professional=null,professionalId=null,unassigned=[];
     if(roles.includes('PROFESSIONAL')) {
       professionalId=invite.get('invitedProfessionalId');
@@ -144,6 +146,7 @@ async function acceptManagementGroup(tx,db,uid,account,{tenantId,inviteId,tokenH
   await accountAvailable(tx,db,uid);
   const ids=initial.get('invitationTenantIds');
   if(initial.get('invitationKind')!=='MANAGEMENT'||!Array.isArray(ids)||!ids.includes(tenantId)||ids.length>50)throw new HttpsError('failed-precondition','Convite inválido.');
+  await requireDelegationAllowed(tx,db,uid,initial.get('createdBy'));
   const writeLinks=await prepareTenantLinks(tx,db,uid,ids);
   const prepared=[];
   for(const id of ids) {

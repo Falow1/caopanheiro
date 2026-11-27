@@ -6,11 +6,42 @@ import 'package:equipe_app/domain/repositories/team_extras_repository.dart';
 import '../domain/repositories/driver_session.dart';
 
 import '../core/formatters.dart';
+import '../core/location_sharing.dart';
 import '../domain/models.dart';
 import '../domain/repositories/transport_repository.dart';
 
 class AppController extends AppControllerBase with LiveFollowing {
-  AppController(this._repository, {this.onSignOut});
+  /// [positions]: position of the phone; called as `positions:`.
+  AppController(this._repository, {this.onSignOut, this._positions});
+  final PositionSource? _positions;
+
+  /// Live position while a transport of the driver is on the way; null
+  /// without a phone position source or a server that receives it.
+  late final DriverLocationSharing? location =
+      _positions == null || _repository is! DriverLocationReporter
+      ? null
+      : DriverLocationSharing(
+          _positions,
+          (tenantId, fix) =>
+              (_repository as DriverLocationReporter).reportLocation(
+                tenantId,
+                latitude: fix.latitude,
+                longitude: fix.longitude,
+                accuracy: fix.accuracy,
+              ),
+        );
+
+  /// Starts or stops the position after each change of the trips.
+  void _followRoute() {
+    final tenants = _profile == null
+        ? const <String>{}
+        : _transports
+              .where((item) => routeStatuses.contains(item.status))
+              .map((item) => item.tenantId)
+              .toSet();
+    unawaited(location?.follow(tenants));
+  }
+
   bool get hasPendingCommands =>
       _repository is AttachedSession &&
       (_repository as AttachedSession).hasPendingCommands;
@@ -28,6 +59,7 @@ class AppController extends AppControllerBase with LiveFollowing {
     final Object repository = _repository;
     return repository is RoleNoticesSource && !readOnly ? repository : null;
   }
+
   bool get readOnly => _session?.readOnly ?? false;
 
   @override
@@ -49,6 +81,7 @@ class AppController extends AppControllerBase with LiveFollowing {
     _memberships = [];
     _transports = [];
     _activeTenantId = null;
+    _followRoute();
     if (_repository is AttachedSession) {
       (_repository as AttachedSession).detachView();
     }
@@ -87,6 +120,7 @@ class AppController extends AppControllerBase with LiveFollowing {
     if (epoch != _epoch) return;
     _memberships = memberships;
     _transports = transports;
+    _followRoute();
     if (!_memberships.any((item) => item.tenantId == _activeTenantId)) {
       _activeTenantId = null;
     }
@@ -96,6 +130,23 @@ class AppController extends AppControllerBase with LiveFollowing {
   }
 
   Future<bool> refresh() => _guard(_reload);
+
+  /// Back to the app: the same reading without loading state, so the screen
+  /// keeps answering taps. A revoked access still ends the session.
+  Future<bool> refreshQuietly() async {
+    final epoch = _epoch;
+    var revoked = false;
+    final done = await runQuietly(() async {
+      try {
+        await _reload();
+      } on SessionAccessException {
+        revoked = true;
+        rethrow;
+      }
+    });
+    if (revoked && epoch == _epoch) signOut();
+    return done;
+  }
 
   /// Live refresh of the driver's trips: every petshop of the driver, since
   /// the list may show all of them.
@@ -189,7 +240,10 @@ class AppController extends AppControllerBase with LiveFollowing {
   ) => _guard(() async {
     final epoch = _epoch;
     final updated = await _repository.transition(id, expected, next);
-    if (epoch == _epoch) _replace(updated);
+    if (epoch == _epoch) {
+      _replace(updated);
+      _followRoute();
+    }
   });
 
   Future<bool> addIncident(String id, String type, String description) =>
@@ -215,6 +269,7 @@ class AppController extends AppControllerBase with LiveFollowing {
     _memberships = const [];
     _transports = const [];
     _activeTenantId = null;
+    location?.reset();
     clearOperationState(notify: false);
     notifyListeners();
     onSignOut?.call();

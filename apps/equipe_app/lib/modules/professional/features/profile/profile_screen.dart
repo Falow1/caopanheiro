@@ -1,3 +1,4 @@
+import 'package:caopanheiro_core/caopanheiro_core.dart' show displayPhone;
 import '../../../../../features/more/team_function_profile_screen.dart';
 import '../../../../../features/more/profile_screen.dart' as account;
 import '../../../../features/more/workforce_actions.dart';
@@ -87,7 +88,7 @@ class ProfileScreen extends StatelessWidget {
                       ListTile(
                         leading: const Icon(Icons.phone_outlined),
                         title: const Text('Telefone'),
-                        subtitle: Text(professional.phone),
+                        subtitle: Text(displayPhone(professional.phone)),
                       ),
                       ListTile(
                         leading: const Icon(Icons.badge_outlined),

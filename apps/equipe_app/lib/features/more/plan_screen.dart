@@ -57,8 +57,8 @@ class _PlanScreenState extends State<PlanScreen> with LiveScreenReload {
     } catch (_) {
       if (mounted) {
         setState(
-          () => _error =
-              'Não foi possível consultar o plano. Confira a conexão.',
+          () =>
+              _error = 'Não foi possível consultar o plano. Confira a conexão.',
         );
       }
     } finally {

@@ -1,8 +1,14 @@
 import 'package:equipe_app/domain/policies/transport_review.dart';
 import 'appointment_detail_screen.dart';
+import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
+    show AppScreenTips, AppTourTarget;
 import 'package:flutter/material.dart';
 import '../../domain/repositories/transport_management_repository.dart';
+import '../../core/formatters.dart' as fmt;
 import '../../core/live_screen_reload.dart';
+import '../../core/screen_tips.dart';
+import '../../modules/driver/core/external_actions.dart' show openPositionMap;
+import '../../state/app_controller.dart';
 import '../../state/app_scope.dart';
 
 Future<bool> confirmTransportConflicts(
@@ -323,6 +329,89 @@ class _TransportManagementScreenState extends State<TransportManagementScreen>
     if (mounted && c.company?.id == company) await _load();
   }
 
+  static const _onRoute = {'GOING_TO_ORIGIN', 'PET_COLLECTED', 'IN_TRANSIT'};
+
+  /// Latest position of the driver, read now: position reports move no live
+  /// signal, so the list itself may be older.
+  Future<void> _showLocation(ManagedTransport t) async {
+    final c = AppScope.of(context);
+    final company = c.company?.id;
+    final messenger = ScaffoldMessenger.of(context);
+    DriverPosition position;
+    try {
+      position = await c.transportLocation(t.id);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            e is FormatException
+                ? e.message
+                : 'Não foi possível consultar a localização. Confira a conexão.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (!mounted || c.company?.id != company) return;
+    final reportedAt = position.reportedAt;
+    final String text;
+    if (!position.onRoute) {
+      text =
+          'Este transporte não está mais a caminho. A localização só aparece do início do deslocamento até a entrega.';
+    } else if (reportedAt == null || !position.hasPosition) {
+      text =
+          'O entregador ainda não enviou a posição deste trajeto. Ela depende da localização permitida no celular dele; as etapas continuam valendo.';
+    } else {
+      final accuracy = position.accuracy == null
+          ? ''
+          : ', com precisão de cerca de ${position.accuracy} m';
+      text =
+          'Posição enviada às ${_clock(reportedAt)} (${_age(position.checkedAt.difference(reportedAt))})$accuracy.';
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Localização do entregador'),
+        content: Text(text),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: const Text('Fechar'),
+          ),
+          if (position.onRoute && position.hasPosition)
+            FilledButton.icon(
+              onPressed: () async {
+                final opened = await openPositionMap(
+                  position.latitude!,
+                  position.longitude!,
+                );
+                if (!opened) {
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Nenhum aplicativo de mapa disponível.'),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('Abrir no mapa'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static String _clock(DateTime value) =>
+      '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+
+  static String _age(Duration age) {
+    if (age.inMinutes < 1) return 'agora há pouco';
+    if (age.inMinutes < 60) {
+      return 'há ${age.inMinutes} ${age.inMinutes == 1 ? 'minuto' : 'minutos'}';
+    }
+    return 'há mais de uma hora';
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = AppScope.of(context);
@@ -335,6 +424,19 @@ class _TransportManagementScreenState extends State<TransportManagementScreen>
               transportNeedsReview(t.scheduledAt, t.status),
         )
         .toList();
+    return AppScreenTips(
+      screen: TipScreens.transports,
+      tips: TeamTips.transports,
+      ready: !_loading,
+      child: _scaffold(c, disabled, visible),
+    );
+  }
+
+  Widget _scaffold(
+    AppController c,
+    bool disabled,
+    List<ManagedTransport> visible,
+  ) {
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -357,6 +459,24 @@ class _TransportManagementScreenState extends State<TransportManagementScreen>
                 padding: const EdgeInsets.all(20),
                 physics: const AlwaysScrollableScrollPhysics(),
                 children: [
+                  // With more than one company, the petshop is named.
+                  if (c.companies.length > 1 && c.company != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.storefront_outlined, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              c.company!.name,
+                              key: const ValueKey('transport-company-name'),
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   if (_error != null) Text(_error!),
                   if (c.catalogOffline)
                     const Text('Gestão de transportes exige conexão.'),
@@ -370,7 +490,7 @@ class _TransportManagementScreenState extends State<TransportManagementScreen>
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Text(
-                              '${t.type == 'PICKUP' ? 'Coleta' : 'Retorno'} · ${t.displayScheduledAt.toString().substring(0, 16)}',
+                              '${t.type == 'PICKUP' ? 'Coleta' : 'Retorno'} · ${fmt.date(t.displayScheduledAt)} às ${fmt.time(t.displayScheduledAt)}',
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             Text(
@@ -405,9 +525,28 @@ class _TransportManagementScreenState extends State<TransportManagementScreen>
                               'Entregador: ${_drivers.where((d) => d.id == t.driverUid).firstOrNull?.name ?? t.driverUid}',
                             ),
                             if (!t.finished)
-                              OutlinedButton(
-                                onPressed: disabled ? null : () => _reassign(t),
-                                child: const Text('Trocar responsável'),
+                              AppTourTarget(
+                                id: TipTargets.transportReassign,
+                                child: OutlinedButton(
+                                  onPressed: disabled
+                                      ? null
+                                      : () => _reassign(t),
+                                  child: const Text('Trocar responsável'),
+                                ),
+                              ),
+                            if (c.supportsDriverPosition &&
+                                _onRoute.contains(t.status))
+                              AppTourTarget(
+                                id: TipTargets.transportLocation,
+                                child: OutlinedButton.icon(
+                                  onPressed: disabled
+                                      ? null
+                                      : () => _showLocation(t),
+                                  icon: const Icon(Icons.my_location),
+                                  label: const Text(
+                                    'Ver localização do entregador',
+                                  ),
+                                ),
                               ),
                             for (final entry in t.history)
                               Padding(

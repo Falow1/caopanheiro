@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Firestore, Query, Transaction, WriteBatch } from 'firebase-admin/firestore';
 import { SIGNAL_FIELDS, bumpSignals, signalNeedsFields, signalPaths } from '../src/live_signals.js';
+import { deliverPushes } from './push_delivery.js';
 
 // Cloud Functions moves the live signals with Firestore triggers, which a
 // project on the Spark plan cannot deploy. Here each call runs with a record of
@@ -14,7 +15,9 @@ import { SIGNAL_FIELDS, bumpSignals, signalNeedsFields, signalPaths } from '../s
 // batches, transactions and document writes, with the paths of its _ops; and
 // the reads of Transaction.get/getAll, Firestore.getAll and Query.get. A
 // transaction that retries resets its batch, so only the committed attempt
-// counts. backend/test/fly-server.test.mjs checks these points.
+// counts. backend/test/fly-server.test.mjs checks these points. The same
+// record, with the documents the call created, gives the push notifications
+// of server/push_delivery.js.
 
 const storage = new AsyncLocalStorage();
 const UNSUPPORTED = 'Versão do Firestore Admin sem os pontos de acompanhamento esperados.';
@@ -63,6 +66,7 @@ export function installWriteTracking() {
     // Refuse the call rather than commit writes whose signals would be lost.
     if (!Array.isArray(this._ops)) throw new Error(UNSUPPORTED);
     const ops = this._ops.map(({ docPath, op }) => ({ path: docPath, op }));
+    const created = ops.filter(({ op }) => op().currentDocument?.exists === false).map(({ path }) => path);
     // An update of a document the call did not read: read its fields now, just
     // before the commit, so a tutor or petshop that leaves it is still told.
     const unknown = [...new Set(ops.filter(({ path, op }) => signalNeedsFields(path) && !store.before.has(path)
@@ -75,13 +79,14 @@ export function installWriteTracking() {
     for (const { path } of ops) if (!store.before.has(path) && signalNeedsFields(path)) store.before.set(path, null);
     const result = await commit.apply(this, args);
     for (const { path } of ops) store.written.add(path);
+    for (const path of created) store.created?.add(path);
     return result;
   };
 }
 
 /// Runs `work` with its own record of committed writes.
 export async function tracked(work) {
-  const store = { written: new Set(), before: new Map() };
+  const store = { written: new Set(), created: new Set(), before: new Map() };
   const result = await storage.run(store, work);
   return { result, store };
 }
@@ -107,10 +112,11 @@ export async function signalChanges(db, store) {
 }
 
 /// Runs `work` and then moves the signals of what it committed, even when it
-/// failed after committing. A failure to move a signal is logged and never
-/// changes the result of the call.
-export async function withSignals(db, work, log = console) {
-  const store = { written: new Set(), before: new Map() };
+/// failed after committing, and sends its push notifications. A failure to
+/// move a signal or to send a push is logged and never changes the result of
+/// the call.
+export async function withSignals(db, work, log = console, push = deliverPushes) {
+  const store = { written: new Set(), created: new Set(), before: new Map() };
   try {
     return await storage.run(store, work);
   } finally {
@@ -119,6 +125,11 @@ export async function withSignals(db, work, log = console) {
       if (signals.length) await storage.exit(() => bumpSignals(db, signals));
     } catch (error) {
       log.error?.('Falha ao mover os sinais de atualização.', error?.message ?? error);
+    }
+    try {
+      if (store.written.size) await storage.exit(() => push(db, store));
+    } catch (error) {
+      log.error?.('Falha ao enviar as notificações.', error?.message ?? error);
     }
   }
 }

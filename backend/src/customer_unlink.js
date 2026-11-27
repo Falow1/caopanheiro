@@ -5,7 +5,7 @@ import { object, identifier } from './runtime.js';
 import { teamCommand, metadata } from './team_commands.js';
 import { options } from './runtime.js';
 import { requirePrincipal } from './staff_privacy.js';
-import { jsonCustomer } from './customers.js';
+import { teamCustomers } from './customers.js';
 import { tenantAudit } from './tenant_audit.js';
 import { hasOpenWork } from './open_work.js';
 
@@ -31,6 +31,7 @@ export const unlinkCustomerAccount = onCall(options, async request => {
     if(!member.exists || member.get('customerId')!==customerId || !member.get('roles')?.includes('TUTOR'))
       throw new HttpsError('failed-precondition','O vínculo mudou. Atualize os clientes antes de continuar.');
     await requireNoOpenCustomerWork(tx,db,tenantId,customerId);
+    const {customers:[view]}=await teamCustomers(tx,db,tenantId,[customer]);
     const roles=member.get('roles').filter(role=>role!=='TUTOR'), active=member.get('active')===true&&roles.length>0;
     // The mark sends a later entry of the same e-mail by the fixed link to the
     // principal manager, also when the account was deleted and created again.
@@ -40,6 +41,6 @@ export const unlinkCustomerAccount = onCall(options, async request => {
     if(active)tx.set(link,{});else tx.delete(link);
     tx.create(db.collection(`tenants/${tenantId}/workforceEvents`).doc(),{actorUid:uid,targetUid:tutorUid,customerId,action:'TUTOR_UNLINKED',createdAt:FieldValue.serverTimestamp()});
     tenantAudit(tx,db,tenantId,'TUTOR_UNLINKED',uid,access.member.get('name'),{targetUid:tutorUid,customerId});
-    return{customer:{...jsonCustomer(customer),tutorUid:null},unlinked:true};
+    return{customer:{...view,tutorUid:null},unlinked:true};
   },['MANAGER'],async({access})=>requirePrincipal(access.member.data()));
 });

@@ -1,5 +1,5 @@
 import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
-    show petEmojiForSpecies;
+    show PetBreeds, petEmojiForSpecies;
 
 class Pet {
   const Pet({
@@ -10,6 +10,7 @@ class Pet {
     required this.size,
     this.notes = '',
     this.species = '',
+    this.breedCode,
     String? emoji,
   });
 
@@ -20,5 +21,14 @@ class Pet {
   final String size;
   final String notes;
   final String species;
+  final String? breedCode;
   String get emoji => petEmojiForSpecies(species);
+
+  /// Icon of the breed; older appointments only have the breed as text.
+  String? get breedIcon => PetBreeds.of(
+    breedCode: breedCode,
+    species: species,
+    breed: breed,
+    size: size,
+  )?.icon;
 }

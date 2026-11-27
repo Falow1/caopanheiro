@@ -21,6 +21,14 @@ abstract interface class SaasSupportDesk {
   });
 }
 
+/// "Raças sugeridas": breeds people did not find on the list. Adding a breed
+/// to the list is a new version of the apps; here the platform reads the
+/// names and marks them as evaluated.
+abstract interface class SaasBreedSuggestions {
+  Future<List<BreedSuggestion>> breedSuggestions();
+  Future<void> removeBreedSuggestion(String id);
+}
+
 /// "Renovar até" (E2): exceptions such as a payment of several months or a
 /// courtesy, recorded with the reason in the platform audit.
 abstract interface class SaasRenewalDesk {

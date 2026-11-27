@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
+    show PetPolicy;
+
 import 'package:caopanheiro_core/caopanheiro_core.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppNotice, AppTipsStore;
@@ -9,8 +12,10 @@ import '../domain/models/pet.dart';
 import '../domain/models/service.dart';
 import '../domain/models/tutor.dart';
 import '../domain/policies/tutor_invite.dart';
+import '../domain/repositories/login_code_repository.dart';
 import '../domain/repositories/petshop_repository.dart';
 import '../domain/repositories/tutor_extras_repository.dart';
+import '../domain/repositories/tutor_pet_policy.dart';
 import '../domain/repositories/tutor_session.dart';
 import '../domain/repositories/tutor_transport_repository.dart';
 
@@ -103,6 +108,14 @@ class AppController extends AppControllerBase
   bool get companyReadOnly => _selectedCompany?.readOnly ?? false;
   String get companyContactPhone => _selectedCompany?.contactPhone ?? '';
 
+  /// Name of the selected petshop, used in the messages about its pets.
+  String get companyName => _selectedCompany?.name ?? 'Este petshop';
+
+  /// Pets the selected petshop serves; without the rule, every pet.
+  PetPolicy get petPolicy => _repository is TutorPetPolicySource
+      ? (_repository as TutorPetPolicySource).petPolicy
+      : const PetPolicy();
+
   /// New bookings and rescheduling go by phone for now (E2).
   bool get companyBookingPaused => _selectedCompany?.bookingPaused ?? false;
 
@@ -115,6 +128,7 @@ class AppController extends AppControllerBase
     }
     return null;
   }
+
   bool get emailVerified => _session?.emailVerified ?? true;
 
   @override
@@ -222,8 +236,7 @@ class AppController extends AppControllerBase
 
   /// The account lacks the name or phone, as one created by Google; the
   /// shell asks for them once after entering, before any link.
-  bool get accountContactMissing =>
-      !(_session?.accountContactComplete ?? true);
+  bool get accountContactMissing => !(_session?.accountContactComplete ?? true);
 
   Future<bool> saveAccountContact(String name, String phone) =>
       _guard(() async {
@@ -233,6 +246,7 @@ class AppController extends AppControllerBase
         final tutor = await session.saveAccountContact(name, phone);
         if (epoch == _epoch) _tutor = tutor;
       });
+
   /// Drops the last operation message, used when a page that showed its own
   /// result returns to the login.
   void clearError() => clearOperationState();
@@ -277,11 +291,40 @@ class AppController extends AppControllerBase
     }
   });
 
+  /// Second step of a new login (a code by e-mail), skippable in this
+  /// demonstration because the server does not require it. A restored
+  /// session does not ask again.
+  bool _loginCodePending = false;
+  String? _loginChallenge;
+  bool get loginCodePending =>
+      _loginCodePending && _tutor != null && _repository is LoginCodeRepository;
+  Future<bool> requestLoginCode() => _guard(() async {
+    _loginChallenge = await (_repository as LoginCodeRepository)
+        .requestLoginCode();
+  });
+  Future<bool> verifyLoginCode(String code) => _guard(() async {
+    final challenge = _loginChallenge;
+    if (challenge == null) {
+      throw const FormatException(
+        'Toque em Enviar código para receber um código.',
+      );
+    }
+    await (_repository as LoginCodeRepository).verifyLoginCode(challenge, code);
+    _loginChallenge = null;
+    _loginCodePending = false;
+  });
+  void skipLoginCode() {
+    _loginCodePending = false;
+    clearOperationState();
+    notifyListeners();
+  }
+
   Future<bool> signIn(String identifier, String password) => _guard(() async {
     final epoch = _epoch;
     final tutor = await _repository.signIn(identifier, password);
     if (epoch != _epoch) return;
     _tutor = tutor;
+    _loginCodePending = true;
     _takeRemovedCompany();
     await _loadData();
   });
@@ -292,6 +335,7 @@ class AppController extends AppControllerBase
     final tutor = await session.signInWithGoogle();
     if (epoch != _epoch) return;
     _tutor = tutor;
+    _loginCodePending = true;
     _takeRemovedCompany();
     await _loadData();
   });
@@ -516,6 +560,7 @@ class AppController extends AppControllerBase
       await transportPolicy();
     } catch (_) {}
   }
+
   Future<List<Map<String, dynamic>>> searchTransportAddress(String query) =>
       _transportRead((r) => r.searchTransportAddress(query));
   Future<Map<String, dynamic>> quoteTransport(
@@ -536,7 +581,11 @@ class AppController extends AppControllerBase
     if (epoch != _epoch) return;
     // Confirmed mutation; do not turn a second read failure into a failed save.
     if (integrated) {
-      _pets = [..._pets.where((old) => old.id != pet.id), pet];
+      final old = _pets.where((item) => item.id == pet.id).firstOrNull;
+      _pets = [
+        ..._pets.where((item) => item.id != pet.id),
+        pet.keepingServiceOf(old),
+      ];
     } else {
       final pets = await _repository.getPets();
       if (epoch == _epoch) _pets = pets;
@@ -584,6 +633,8 @@ class AppController extends AppControllerBase
   /// endings (wrong password, expired identity) keep it for the next attempt.
   void signOut({bool forgetInvite = false}) {
     if (forgetInvite) pendingInvite = null;
+    _loginCodePending = false;
+    _loginChallenge = null;
     serviceQuoteChange = null;
     linkNotice = null;
     _returnCompanyId = null;

@@ -1,7 +1,5 @@
 import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
-    show petEmojiForSpecies;
-import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
-    show AppointmentStatus;
+    show AppointmentStatus, PetBreeds, petEmojiForSpecies;
 
 class TransportPet {
   const TransportPet({
@@ -21,6 +19,10 @@ class TransportPet {
   final String name;
   final String breed;
   final String size;
+
+  /// Icon of the breed; the copy of the transport keeps the breed as text.
+  String? get breedIcon =>
+      PetBreeds.of(species: species, breed: breed, size: size)?.icon;
 }
 
 class TransportPetCheck {

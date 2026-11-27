@@ -13,5 +13,6 @@ export 'models/subscription.dart';
 export 'models/audit_event.dart';
 export 'models/support_request.dart';
 export 'models/billing_request.dart';
+export 'models/breed_suggestion.dart';
 
 export 'models/platform_diagnostics.dart';

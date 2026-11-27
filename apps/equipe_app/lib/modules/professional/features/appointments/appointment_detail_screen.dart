@@ -2,7 +2,7 @@ import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppRefreshBody;
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppScreenTips, AppTourTarget;
+    show AppPetIcon, AppScreenTips, AppTourTarget;
 import '../../../../core/screen_tips.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppContentCard, AppRadii, AppTextStyles, showAppConfirmation;
@@ -54,19 +54,10 @@ class AppointmentDetailScreen extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 68,
-                    height: 68,
-                    decoration: const BoxDecoration(
-                      color: AppColors.mint,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        appointment.pet.emoji,
-                        style: const TextStyle(fontSize: 34),
-                      ),
-                    ),
+                  AppPetIcon(
+                    icon: appointment.pet.breedIcon,
+                    size: 68,
+                    semanticLabel: appointment.pet.breed,
                   ),
                   const SizedBox(width: 15),
                   Expanded(

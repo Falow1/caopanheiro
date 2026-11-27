@@ -1,3 +1,4 @@
+import 'package:caopanheiro_core/caopanheiro_core.dart' show displayPhone;
 import '../../core/team_layout.dart';
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
@@ -164,7 +165,7 @@ class _CustomerTile extends StatelessWidget {
         style: Theme.of(context).textTheme.titleMedium,
       ),
       subtitle: Text(
-        '${customer.phone} · ${customer.pets.length}${customer.pets.length == 1 ? ' pet' : ' pets'}',
+        '${displayPhone(customer.phone)} · ${customer.pets.length}${customer.pets.length == 1 ? ' pet' : ' pets'}',
       ),
       trailing: const Icon(Icons.chevron_right_rounded),
     ),

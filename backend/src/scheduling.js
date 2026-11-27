@@ -18,6 +18,7 @@ import { civil, dayValue, defaultTimeZone, jsonDays, minute, overlaps, stateTime
 import { notify, noticeDate, petNames } from './notices.js';
 import { customerTutorUid } from './tutor_access.js';
 import { BOOKINGS_PAUSED, TEAM_BOOKINGS_PAUSED, TUTOR_APP_CLOSED } from './access_policy.js';
+import { evaluatePet, normalizedPet, petBlocksRef, petPolicyRef, petServiceMessage, storedPetPolicy } from './pet_policy.js';
 
 const schedulingRoles = ['MANAGER','ATTENDANT','TUTOR'];
 // After the deadline of an expired plan (E2), nobody books or moves an
@@ -26,6 +27,16 @@ function refusePausedBooking(access) {
   if (access.billing?.phase !== BOOKINGS_PAUSED) return;
   const team = access.member.get('roles').some((role) => ['MANAGER','ATTENDANT'].includes(role));
   throw new HttpsError('failed-precondition', team ? TEAM_BOOKINGS_PAUSED : TUTOR_APP_CLOSED, { reason: 'BOOKINGS_PAUSED' });
+}
+// A pet the petshop does not serve, or marked "Não atender este pet", is not
+// booked, rescheduled or added to an appointment; appointments already booked
+// stay valid. The tutor reads the neutral text, never the reason of a block.
+function refuseUnservedPets(booking, access, petIds) {
+  const refused = booking.unserved.find(({ pet }) => petIds.includes(pet.id));
+  if (!refused) return;
+  const team = access.member.get('roles').some((role) => ['MANAGER','ATTENDANT'].includes(role));
+  throw new HttpsError('failed-precondition', petServiceMessage(refused.reason, refused.pet, { tutor: !team, petshop: team ? undefined : access.tenant?.get('tradeName') ?? 'O petshop' }),
+    { reason: 'PET_NOT_SERVED', petId: refused.pet.id, service: refused.reason });
 }
 const liveStatuses = ['REQUESTED','CONFIRMED','PET_RECEIVED','IN_PROGRESS'];
 const policyRef = (db,tenant) => db.doc(`tenants/${tenant}/settings/scheduling`);
@@ -62,7 +73,7 @@ export function selection(value) {
 }
 
 export async function bookingData(tx, db, tenantId, uid, access, customerId, items) {
-  const [customer, policy] = await tx.getAll(db.doc(`tenants/${tenantId}/customers/${customerId}`), policyRef(db,tenantId));
+  const [customer, policy, petPolicy, petBlocks] = await tx.getAll(db.doc(`tenants/${tenantId}/customers/${customerId}`), policyRef(db,tenantId), petPolicyRef(db,tenantId), petBlocksRef(db,tenantId,customerId));
   if (!customer.exists) throw new HttpsError('not-found','Cliente não encontrado.');
   const team = access.member.get('roles').some((role) => ['MANAGER','ATTENDANT'].includes(role));
   if (!team && (customer.get('tutorUid') !== uid || access.member.get('customerId') !== customerId)) throw new HttpsError('permission-denied','Este cadastro não pertence à sua conta.');
@@ -71,9 +82,14 @@ export async function bookingData(tx, db, tenantId, uid, access, customerId, ite
   const services = await tx.getAll(...serviceIds.map((id) => db.doc(`tenants/${tenantId}/services/${id}`)));
   const serviceMap = new Map(services.map((doc) => [doc.id,doc]));
   let durationMinutes = 0; let priceCents = 0;
+  const servicePolicy = storedPetPolicy(petPolicy), blocks = petBlocks.get('pets') ?? {}, unserved = [];
   const confirmedItems = items.map((item) => {
-    const pet = customer.get('pets')?.[item.petId];
-    if (!pet) invalid('O pet não pertence ao cliente selecionado.');
+    const stored = customer.get('pets')?.[item.petId];
+    if (!stored) invalid('O pet não pertence ao cliente selecionado.');
+    // The appointment keeps the pet with the breed and size of the list.
+    const { breedPending, legacyBreed, ...pet } = normalizedPet(stored);
+    const result = evaluatePet(servicePolicy, pet, { blocked: !!blocks[pet.id] });
+    if (!result.served) unserved.push({ pet, reason: result.reason });
     const confirmed = item.serviceIds.map((id) => {
       const doc = serviceMap.get(id);
       if (!doc?.exists || doc.get('active') !== true) invalid('Serviço indisponível.');
@@ -99,7 +115,7 @@ export async function bookingData(tx, db, tenantId, uid, access, customerId, ite
     if(!matches||matches.empty||matches.size===1&&matches.docs[0].get('active')===true&&matches.docs[0].get('roles')?.some(role=>['PROFESSIONAL','MANAGER'].includes(role))&&(!matches.docs[0].get('professionalId')||matches.docs[0].get('professionalId')===doc.id))unlinkedAllowed.add(doc.id);
   }
   return { customer: { id:customer.id, recordNumber:customer.get('recordNumber') ?? null, name:customer.get('name'), phone:customer.get('phone'), email:customer.get('email'), pets:confirmedItems.map((item) => item.pet) },
-    tutorUid:customer.get('tutorUid') ?? null, items:confirmedItems, durationMinutes, priceCents, policy:policy.data(), professionals:professionalDocs.docs.filter(doc=>eligible.has(doc.id)||unlinkedAllowed.has(doc.id)) };
+    tutorUid:customer.get('tutorUid') ?? null, items:confirmedItems, unserved, durationMinutes, priceCents, policy:policy.data(), professionals:professionalDocs.docs.filter(doc=>eligible.has(doc.id)||unlinkedAllowed.has(doc.id)) };
 }
 
 export function professionalAvailable(booking, professional, day, state, start, end, excludeId) {
@@ -121,11 +137,16 @@ export const getAvailableSlots = onCall(options, async (request) => {
   return db.runTransaction(async (tx) => {
     const access = await teamAccess(tx,db,tenantId,uid,schedulingRoles);
     refusePausedBooking(access);
+    let bookedPets = [];
     if (excludeId) {
       const current = await tx.get(db.doc(`tenants/${tenantId}/appointments/${excludeId}`));
       if (!current.exists || current.get('customerId') !== customerId || !['REQUESTED','CONFIRMED'].includes(current.get('status'))) throw new HttpsError('permission-denied', 'Agendamento indisponível para remarcação.');
+      bookedPets = executionItems(current.data()).map((item) => item.pet?.id);
     }
     const booking = await bookingData(tx,db,tenantId,uid,access,customerId,items);
+    // Times of an appointment already booked can still be read; saving a new
+    // time refuses the pets the petshop no longer serves.
+    refuseUnservedPets(booking, access, items.map((item) => item.petId).filter((id) => !bookedPets.includes(id)));
     const doc = await tx.get(dayRef(db,tenantId,day)); const state = await reservationState(tx,db,tenantId,doc);
     const slots = [];
     for (let start=0;start+booking.durationMinutes<=1440;start+=booking.policy.slotMinutes) {
@@ -161,6 +182,9 @@ export const saveAppointment = onCall(options, async (request) => {
     if (existing.exists && existing.get('customerId') !== customerId) invalid('Não é possível trocar o cliente do agendamento.');
     if (!existing.exists || existing.get('startsAt')?.toMillis?.() !== timestamp) refusePausedBooking(access);
     const booking=await bookingData(tx,db,tenantId,uid,access,customerId,items);
+    const bookedPets=existing.exists?executionItems(existing.data()).map((item)=>item.pet?.id):[];
+    const newTime=!existing.exists||existing.get('startsAt')?.toMillis?.()!==timestamp;
+    refuseUnservedPets(booking,access,items.map((item)=>item.petId).filter((id)=>newTime||!bookedPets.includes(id)));
     // Each voice owns its field, decided per field: team roles write notes and only the
     // tutor of this customer writes tutorNotes, so a manager who is also the tutor keeps both.
     const roles=access.member.get('roles');

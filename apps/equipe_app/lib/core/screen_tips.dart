@@ -19,6 +19,7 @@ abstract final class TipScreens {
   static const renewal = 'TEAM_RENEWAL';
   static const accessPaused = 'TEAM_ACCESS_PAUSED';
   static const dataExport = 'TEAM_EXPORT';
+  static const transports = 'TEAM_TRANSPORTS';
   static const proToday = 'PRO_TODAY';
   static const proAgenda = 'PRO_AGENDA';
   static const proProfile = 'PRO_PROFILE';
@@ -28,6 +29,8 @@ abstract final class TipScreens {
   static const driverHistory = 'DRIVER_HISTORY';
   static const driverProfile = 'DRIVER_PROFILE';
   static const driverTransport = 'DRIVER_TRANSPORT';
+  static const petPolicy = 'TEAM_PET_POLICY';
+  static const breed = 'TEAM_BREED';
 
   static const all = [
     agenda,
@@ -43,6 +46,7 @@ abstract final class TipScreens {
     renewal,
     accessPaused,
     dataExport,
+    transports,
     proToday,
     proAgenda,
     proProfile,
@@ -52,6 +56,8 @@ abstract final class TipScreens {
     driverHistory,
     driverProfile,
     driverTransport,
+    petPolicy,
+    breed,
   ];
 }
 
@@ -104,6 +110,14 @@ abstract final class TipTargets {
   static const pausedShop = 'team.paused.shop';
   static const pausedActions = 'team.paused.actions';
   static const exportFiles = 'team.export.files';
+  static const transportReassign = 'team.transports.reassign';
+  static const transportLocation = 'team.transports.location';
+  static const customerPet = 'team.customer.pet';
+  static const petPolicyDogs = 'team.petPolicy.dogs';
+  static const petPolicyPuppies = 'team.petPolicy.puppies';
+  static const petPolicySave = 'team.petPolicy.save';
+  static const breedSearch = 'breed.search';
+  static const breedHelp = 'breed.help';
   static const proDay = 'pro.agenda.day';
   static const proFilters = 'pro.agenda.filters';
   static const proTodayCard = 'pro.today.card';
@@ -118,6 +132,7 @@ abstract final class TipTargets {
   static const driverAddress = 'driver.transport.address';
   static const driverAction = 'driver.transport.action';
   static const driverIncident = 'driver.transport.incident';
+  static const driverLocation = 'driver.transport.location';
 }
 
 const _nav = AppTourTip(
@@ -293,6 +308,33 @@ abstract final class TeamTips {
       title: 'Novo agendamento',
       text: 'Comece um agendamento já com este tutor escolhido.',
     ),
+    AppTourTip(
+      target: TipTargets.customerPet,
+      title: 'Pets do tutor',
+      text:
+          'Em ⋮, edite o pet ou marque Não atender este pet. O motivo fica só para a equipe; o tutor vê um aviso para falar com o petshop.',
+    ),
+  ];
+
+  static const petPolicy = [
+    AppTourTip(
+      target: TipTargets.petPolicyDogs,
+      title: 'Cachorros e gatos',
+      text:
+          'Atenda todos, por porte, só as raças da sua lista ou nenhum. Em Raças que não atendemos, tire raças específicas.',
+    ),
+    AppTourTip(
+      target: TipTargets.petPolicyPuppies,
+      title: 'Filhotes',
+      text:
+          'Pets com menos de 12 meses seguem a regra, são todos atendidos ou nenhum.',
+    ),
+    AppTourTip(
+      target: TipTargets.petPolicySave,
+      title: 'Salvar',
+      text:
+          'Vale para novos agendamentos. Pets fora da regra continuam no cadastro, com um aviso, e os agendamentos marcados seguem valendo.',
+    ),
   ];
 
   static const plan = [
@@ -370,6 +412,21 @@ abstract final class TeamTips {
       title: 'Arquivos dos dados',
       text:
           'Clientes, pets e agendamentos em planilhas. Salve cada um ou compartilhe os três. Cada exportação fica registrada.',
+    ),
+  ];
+
+  static const transports = [
+    AppTourTip(
+      target: TipTargets.transportReassign,
+      title: 'Trocar responsável',
+      text:
+          'Passe o transporte a outro entregador. A troca fica no histórico do transporte.',
+    ),
+    AppTourTip(
+      target: TipTargets.transportLocation,
+      title: 'Localização do entregador',
+      text:
+          'Do início do deslocamento até a entrega, veja onde o entregador está e abra a posição no mapa.',
     ),
   ];
 
@@ -489,7 +546,13 @@ abstract final class TeamTips {
       target: TipTargets.driverAction,
       title: 'Etapa do transporte',
       text:
-          'O botão segue a etapa: iniciar o deslocamento, confirmar a coleta, iniciar o transporte e confirmar a entrega.',
+          'O botão segue a etapa: iniciar o deslocamento, confirmar a coleta, iniciar o transporte e confirmar a entrega. Do início do deslocamento até a entrega, o app compartilha sua localização com o tutor e a equipe.',
+    ),
+    AppTourTip(
+      target: TipTargets.driverLocation,
+      title: 'Localização ao vivo',
+      text:
+          'Mostra se o tutor e a equipe estão vendo você no mapa. Se a localização não estiver permitida, use o botão deste quadro.',
     ),
     AppTourTip(
       target: TipTargets.driverIncident,
@@ -498,3 +561,20 @@ abstract final class TeamTips {
     ),
   ];
 }
+
+/// Breed search of the pet form (features/pets/breed_field.dart, the same
+/// file in the Tutor and in the Equipe).
+const breedPickerTips = [
+  AppTourTip(
+    target: TipTargets.breedSearch,
+    title: 'Buscar raça',
+    text:
+        'Digite como souber: sem acento, com erro ou pelo apelido. A lista acha a raça mais próxima, e o porte vem dela.',
+  ),
+  AppTourTip(
+    target: TipTargets.breedHelp,
+    title: 'Não achou a raça?',
+    text:
+        'Diga se o pet tem raça e, para cachorro, quanto pesa adulto. Ele entra como vira-lata (SRD) ou como outra raça, do porte certo.',
+  ),
+];

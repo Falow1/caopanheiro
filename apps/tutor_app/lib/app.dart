@@ -5,6 +5,7 @@ import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
 
 import 'core/theme/app_theme.dart';
 import 'features/auth/login_screen.dart';
+import 'features/auth/login_code_screen.dart';
 import 'features/navigation/main_shell.dart';
 import 'state/app_controller.dart';
 import 'state/app_scope.dart';
@@ -37,6 +38,8 @@ class TutorApp extends StatelessWidget {
         ),
         home: controller.tutor == null
             ? const LoginScreen()
+            : controller.loginCodePending
+            ? const LoginCodeScreen()
             : const MainShell(),
       ),
     ),

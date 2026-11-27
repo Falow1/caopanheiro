@@ -9,12 +9,13 @@ import {actor,identifier,invalid,localBackend,object,options,teamAccess,text,dig
 import { brazilPhone } from './contact_policy.js';
 import {teamCommand,metadata} from './team_commands.js';
 import {allocateRecordNumbers} from './record_numbers.js';
-import {conflictPreview,requireConflictAcknowledgement,scheduleInput,scheduleInstant,scheduleKey,transportClock,transportZone} from './transport_operations.js';
+import {conflictPreview,duration,requireConflictAcknowledgement,scheduleInput,scheduleInstant,scheduleKey,transportClock,transportZone} from './transport_operations.js';
 import {notify,noticeDate,petNames} from './notices.js';
 import {tutorOwnsCustomer} from './tutor_access.js';
 import {tenantFeature} from './access_policy.js';
 import {defaultTimeZone,localLabel,stateTimeZone} from './calendar.js';
 import {purgeAt,retention} from './retention.js';
+import {routeLocations} from './driver_location.js';
 const legLabel=type=>type==='PICKUP'?'Coleta':'Retorno';
 
 const policyRef=(db,tenant)=>db.doc(`tenants/${tenant}/settings/transport`);
@@ -34,26 +35,43 @@ export const saveTransportPolicy=onCall(options,async request=>{object(request.d
 
 // One local process serializes user-triggered Nominatim searches; no autocomplete.
 let lastSearch=0,searchQueue=Promise.resolve();
-export const searchTransportAddress=onCall({...options,maxInstances:1,concurrency:1},async request=>{
- object(request.data,['tenantId','query'],'Busca');const{db}=await authorized(request,['MANAGER','ATTENDANT','TUTOR']);const query=text(request.data.query,'Endereço',300,5);
+async function searchPlaces(db,query){
  const ref=db.doc(`mapSearchCache/${digest(query.toLocaleLowerCase('pt-BR'))}`),cached=await ref.get();if(cached.exists&&cached.get('expiresAt').toMillis()>Date.now())return{places:cached.get('places')};
  const task=searchQueue.then(async()=>{const wait=1100-(Date.now()-lastSearch);if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));lastSearch=Date.now();
   const endpoint=process.env.TRANSPORT_GEOCODER_URL??'https://nominatim.openstreetmap.org/search';const url=new URL(endpoint);url.search=new URLSearchParams({q:query,format:'jsonv2',limit:'5',countrycodes:'br'}).toString();
   const response=await fetch(url,{headers:{'User-Agent':'CaopanheiroLocal/42 (https://github.com/ho-Rafa/petshop-ecosystem)','Accept-Language':'pt-BR'},signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('Geocoder unavailable');
   const rows=await response.json();if(!Array.isArray(rows))throw new Error('Invalid geocoder response');const places=rows.map(v=>({label:String(v.display_name).slice(0,500),point:point({lat:Number(v.lat),lng:Number(v.lon)})}));await ref.set({places,expiresAt:Timestamp.fromMillis(Date.now()+86400000),purgeAt:purgeAt(retention.mapCache)});return{places};
- });searchQueue=task.catch(()=>{});try{return await task;}catch{throw new HttpsError('unavailable','Busca de endereço indisponível. Tente novamente ou marque o ponto no mapa.');}
-});
-export async function roadDistance(origin,destination,fetcher=fetch){
- const base=process.env.TRANSPORT_ROUTER_URL??'https://router.project-osrm.org';
- try{const response=await fetcher(`${base}/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=false&alternatives=false&steps=false&radiuses=100;100`,{signal:AbortSignal.timeout(12000)});if(!response.ok)throw Error();const value=await response.json();if(value.code!=='Ok'||!Number.isFinite(value.routes?.[0]?.distance))throw Error();return Math.ceil(value.routes[0].distance);}catch{throw new HttpsError('unavailable','Não foi possível calcular a rota pelas ruas. Tente novamente; nenhuma taxa foi confirmada.');}
+ });searchQueue=task.catch(()=>{});return task;
 }
+export const searchTransportAddress=onCall({...options,maxInstances:1,concurrency:1},async request=>{
+ object(request.data,['tenantId','query'],'Busca');const{db}=await authorized(request,['MANAGER','ATTENDANT','TUTOR']);const query=text(request.data.query,'Endereço',300,5);
+ try{return await searchPlaces(db,query);}catch{throw new HttpsError('unavailable','Busca de endereço indisponível. Tente novamente ou marque o ponto no mapa.');}
+});
+// The route by the streets: meters and the driving minutes, never a straight line.
+export async function roadRoute(origin,destination,fetcher=fetch){
+ const base=process.env.TRANSPORT_ROUTER_URL??'https://router.project-osrm.org';
+ try{const response=await fetcher(`${base}/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=false&alternatives=false&steps=false&radiuses=100;100`,{signal:AbortSignal.timeout(12000)});if(!response.ok)throw Error();const value=await response.json();const route=value.routes?.[0];if(value.code!=='Ok'||!Number.isFinite(route?.distance))throw Error();return{meters:Math.ceil(route.distance),minutes:Number.isFinite(route.duration)&&route.duration>=0?Math.min(720,Math.max(1,Math.ceil(route.duration/60))):null};}catch{throw new HttpsError('unavailable','Não foi possível calcular a rota pelas ruas. Tente novamente; nenhuma taxa foi confirmada.');}
+}
+export async function roadDistance(origin,destination,fetcher=fetch){return(await roadRoute(origin,destination,fetcher)).meters;}
+// The trip the team types: the first place found for each address and the
+// route between them give the minutes; the team no longer types them.
+export const estimateTransportTrip=onCall({...options,maxInstances:1,concurrency:1},async request=>{
+ object(request.data,['tenantId','origin','destination'],'Estimativa');const{db}=await authorized(request,['MANAGER','ATTENDANT']);
+ const query=v=>{object(v,['street','district'],'Endereço');return`${text(v.street,'Endereço',300,3)}, ${text(v.district,'Bairro',100,1)}`;};
+ const from=query(request.data.origin),to=query(request.data.destination);let places;
+ try{places=[(await searchPlaces(db,from))[0],(await searchPlaces(db,to))[0]];}catch{throw new HttpsError('unavailable','Busca de endereço indisponível. Tente novamente.');}
+ if(!places[0]||!places[1])throw new HttpsError('not-found','Endereço não encontrado no mapa. Confira rua, número e bairro.');
+ let route;try{route=await roadRoute(places[0].point,places[1].point);}catch{route=null;}
+ if(route?.minutes==null)throw new HttpsError('unavailable','Não foi possível calcular a duração pela rota. Tente novamente.');
+ return{minutes:route.minutes,meters:route.meters};
+});
 export const quoteTutorTransport=onCall(options,async request=>{
  object(request.data,['tenantId','pickup','returnTrip','location'],'Cotação');const {db,tenant,uid,access}=await authorized(request,['TUTOR']);if(!tenantFeature(access.subscription,'transport'))throw new HttpsError('failed-precondition','Transporte ainda não está disponível nesta empresa.',{reason:'PLAN_FEATURE'});
  if(typeof request.data.pickup!=='boolean'||typeof request.data.returnTrip!=='boolean'||!request.data.pickup&&!request.data.returnTrip)invalid('Escolha coleta ou retorno.');
  const location=place(request.data.location),policyDoc=await policyRef(db,tenant).get(),policy=policyDoc.data();if(!policy?.enabled)throw new HttpsError('failed-precondition','Transporte ainda não está disponível nesta empresa.');
  const legs=[];
- if(request.data.pickup){const meters=await roadDistance(location.point,policy.shop.point);legs.push({id:db.collection('identifiers').doc().id,type:'PICKUP',meters,feeCents:priceFor(meters,policy),origin:location,destination:policy.shop});}
- if(request.data.returnTrip){const meters=await roadDistance(policy.shop.point,location.point);legs.push({id:db.collection('identifiers').doc().id,type:'RETURN',meters,feeCents:priceFor(meters,policy),origin:policy.shop,destination:location});}
+ if(request.data.pickup){const{meters,minutes}=await roadRoute(location.point,policy.shop.point);legs.push({id:db.collection('identifiers').doc().id,type:'PICKUP',meters,minutes,feeCents:priceFor(meters,policy),origin:location,destination:policy.shop});}
+ if(request.data.returnTrip){const{meters,minutes}=await roadRoute(policy.shop.point,location.point);legs.push({id:db.collection('identifiers').doc().id,type:'RETURN',meters,minutes,feeCents:priceFor(meters,policy),origin:policy.shop,destination:location});}
  const ref=db.collection(`tenants/${tenant}/transportQuotes`).doc(),expiresAt=new Date(Date.now()+15*60000).toISOString();const quote={id:ref.id,tutorUid:uid,policyVersion:policy.version,pricing:{baseCents:policy.baseCents,minimumCents:policy.minimumCents,perKmCents:policy.perKmCents},legs,totalCents:legs.reduce((n,l)=>n+l.feeCents,0),expiresAt,routeProvider:'OSRM-driving',createdAt:new Date().toISOString()};await ref.create({...quote,purgeAt:purgeAt(retention.quote)});return{quote};
 });
 export async function prepareBookingTransport(tx,db,tenantId,uid,access,quoteId,existing,appointmentId,booking,startsAt,endsAt){
@@ -107,7 +125,7 @@ export const decideTransportRequest=onCall(options,async request=>{
   const transportRef=db.collection(`tenants/${tenantId}/transports`).doc();
   const leg=await prepareTransportLeg(tx,db,tenantId,appointment.id,doc.get('type'),doc.get('pets'),transportRef.id);
   const[recordNumber]=await allocateRecordNumbers(tx,db,tenantId,[{type:'transports',id:transportRef.id}]);
-  const transport={id:transportRef.id,recordNumber,tenantId,appointmentId:appointment.id,appointmentNumber:appointment.get('recordNumber')??null,transportRequestId:id,tutorUid:doc.get('tutorUid'),customerId:doc.get('customerId'),driverUid,type:doc.get('type'),origin:doc.get('origin'),destination:doc.get('destination'),pets:doc.get('pets'),feeCents:doc.get('feeCents'),distanceMeters:doc.get('meters'),status:'ASSIGNED',scheduledAt:new Date(scheduledAt).toISOString(),...transportClock(scheduledAt,zone),estimatedDurationMinutes:null,operationalVersion:2,notes:'',events:[{status:'ASSIGNED',createdAt:new Date().toISOString(),actor:uid}],incidents:[],startedAt:null,collectedAt:null,deliveredAt:null};
+  const transport={id:transportRef.id,recordNumber,tenantId,appointmentId:appointment.id,appointmentNumber:appointment.get('recordNumber')??null,transportRequestId:id,tutorUid:doc.get('tutorUid'),customerId:doc.get('customerId'),driverUid,type:doc.get('type'),origin:doc.get('origin'),destination:doc.get('destination'),pets:doc.get('pets'),feeCents:doc.get('feeCents'),distanceMeters:doc.get('meters'),status:'ASSIGNED',scheduledAt:new Date(scheduledAt).toISOString(),...transportClock(scheduledAt,zone),estimatedDurationMinutes:duration(doc.get('minutes')??null),operationalVersion:2,notes:'',events:[{status:'ASSIGNED',createdAt:new Date().toISOString(),actor:uid}],incidents:[],startedAt:null,collectedAt:null,deliveredAt:null};
   writeTransportLeg(tx,leg);tx.create(transportRef,{...transport,...metadata(uid,false)});tx.update(ref,{status:'CONFIRMED',transportId:transportRef.id,scheduledAt:transport.scheduledAt,localScheduledAt:transport.localScheduledAt,timeZone:zone,decidedAt:new Date().toISOString(),...metadata(uid,true)});
   const names=petNames(doc.get('pets'));
   notify(tx,db,tenantId,uid,[
@@ -122,10 +140,12 @@ export const getTutorTransportTracking=onCall(options,async request=>{
   const currentAccess=await teamAccess(tx,db,tenant,uid,['TUTOR'],{tutorRead:true});const appointment=await tx.get(db.doc(`tenants/${tenant}/appointments/${id}`));
   if(!appointment.exists||!await tutorOwnsCustomer(tx,db,tenant,uid,currentAccess,appointment.get('customerId')))throw new HttpsError('permission-denied','Agendamento não pertence a esta conta.');
   const rows=await appointmentTransportRows(tx,db,tenant,id);const byId=new Map(rows.jobs.map(job=>[job.id,job]));
+  // Driver position while the leg is on the way (driver_location.js).
+  const locations=await routeLocations(tx,db,tenant,rows.jobs);
   // Company wall clock, from the appointment zone, also for older records.
   const zone=transportZone(appointment.data()),clock=at=>at?transportClock(at,zone):{localScheduledAt:null,timeZone:zone};
   // Steps and an incident flag only: incident text is written for the team.
-  const progress=job=>({transportStatus:job?job.get('status'):null,deliveredAt:job?job.get('deliveredAt')??null:null,openIncident:job?(job.get('incidents')??[]).some(incident=>incident.status!=='RESOLVED'):false,events:job?(job.get('events')??[]).map(e=>({status:e.status,createdAt:e.createdAt})):[]});
+  const progress=job=>({transportStatus:job?job.get('status'):null,deliveredAt:job?job.get('deliveredAt')??null:null,openIncident:job?(job.get('incidents')??[]).some(incident=>incident.status!=='RESOLVED'):false,events:job?(job.get('events')??[]).map(e=>({status:e.status,createdAt:e.createdAt})):[],driverLocation:job?locations.get(job.id)??null:null});
   const requested=rows.requests.map(doc=>{const v=doc.data();return{id:doc.id,source:'TUTOR',type:v.type,status:v.status,reason:v.reason??'',feeCents:v.feeCents,meters:v.meters,origin:v.origin,destination:v.destination,scheduledAt:v.scheduledAt??null,...clock(v.scheduledAt),...progress(byId.get(v.transportId))};});
   const linked=new Set(rows.requests.map(doc=>doc.get('transportId')).filter(Boolean));
   // Transports scheduled directly by the team have no request and no fee quote.

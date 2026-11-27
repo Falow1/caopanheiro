@@ -1,6 +1,7 @@
 import 'package:caopanheiro_core/caopanheiro_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/formatters.dart' as fmt;
 import '../../state/app_scope.dart';
 import 'transport_management_screen.dart';
 import '../../domain/repositories/transport_management_repository.dart';
@@ -27,6 +28,9 @@ class _TransportFormScreenState extends State<TransportFormScreen> {
   List<CompanyDriver> _drivers = [];
   String? _driver;
   int? _minutes;
+  // The addresses the minutes were calculated for, and why they are missing.
+  String? _routeKey, _routeNote;
+  bool _estimating = false;
   bool _saving = false;
   String _type = 'PICKUP';
   DateTime _at = DateTime.now().add(const Duration(hours: 1));
@@ -123,12 +127,14 @@ class _TransportFormScreenState extends State<TransportFormScreen> {
     final originalSession = controller.sessionKey;
     setState(() => _saving = true);
     try {
+      final origin = _origin.map(_typed);
+      final destination = _destination.map(_typed);
+      await _estimate(origin, destination);
+      if (!mounted) return;
       final driverUid = _driver!,
           scheduledAt = _at,
           minutes = _minutes,
           type = _type;
-      final origin = _origin.map(_typed);
-      final destination = _destination.map(_typed);
       final notes = _notes.text.trim();
       final preview = await controller.transportConflicts(
         driverUid,
@@ -168,6 +174,34 @@ class _TransportFormScreenState extends State<TransportFormScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// The minutes of the trip by the streets between the two addresses,
+  /// calculated once for each pair of addresses typed.
+  Future<void> _estimate(
+    Map<String, String> origin,
+    Map<String, String> destination,
+  ) async {
+    final key = [
+      origin['street'],
+      origin['district'],
+      destination['street'],
+      destination['district'],
+    ].join('|');
+    if (key == _routeKey || _estimating) return;
+    setState(() => _estimating = true);
+    final minutes = await AppScope.of(
+      context,
+    ).estimateTrip(origin, destination);
+    if (!mounted) return;
+    setState(() {
+      _estimating = false;
+      _routeKey = key;
+      _minutes = minutes;
+      _routeNote = minutes == null
+          ? 'Não foi possível calcular a rota agora. O aviso de conflito considera só horários iguais.'
+          : null;
+    });
   }
 
   /// The typed value of an address field; the phone goes formatted.
@@ -280,28 +314,34 @@ class _TransportFormScreenState extends State<TransportFormScreen> {
               ],
               onChanged: (value) => setState(() => _type = value!),
             ),
-            OutlinedButton(
+            // The day and time of this trip, on the clock of the petshop.
+            OutlinedButton.icon(
               onPressed: _time,
-              child: Text(
-                'Horário do petshop: ${_at.toString().substring(0, 16)}',
+              icon: const Icon(Icons.schedule_rounded),
+              label: Text(
+                '${_type == 'PICKUP' ? 'Buscar o pet' : 'Levar de volta'} em '
+                '${fmt.date(_at)} às ${fmt.time(_at)}',
               ),
             ),
-            TextFormField(
-              decoration: const InputDecoration(
-                labelText: 'Duração estimada da viagem (minutos)',
-                helperText:
-                    'Opcional. Sem estimativa, só horários iguais geram aviso.',
+            const Padding(
+              padding: EdgeInsets.only(top: 4, bottom: 8),
+              child: Text(
+                'Horário local do petshop.',
+                style: TextStyle(fontSize: 12),
               ),
-              keyboardType: TextInputType.number,
-              onChanged: (v) => _minutes = int.tryParse(v),
-              validator: (v) =>
-                  v != null &&
-                      v.isNotEmpty &&
-                      (int.tryParse(v) == null ||
-                          int.parse(v) < 1 ||
-                          int.parse(v) > 720)
-                  ? 'Use 1 a 720 minutos'
-                  : null,
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.route_outlined),
+              title: const Text('Duração estimada da viagem'),
+              subtitle: Text(
+                _estimating
+                    ? 'Calculando pela rota...'
+                    : _minutes != null
+                    ? '$_minutes min pela rota entre os endereços'
+                    : _routeNote ??
+                          'Calculada pela distância entre os endereços ao confirmar.',
+              ),
             ),
             ..._address('Origem', _origin),
             ..._address('Destino', _destination),

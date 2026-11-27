@@ -14,6 +14,7 @@ abstract final class TipScreens {
   static const bookingSchedule = 'TUTOR_BOOKING_SCHEDULE';
   static const bookingConfirm = 'TUTOR_BOOKING_CONFIRM';
   static const appointment = 'TUTOR_APPOINTMENT';
+  static const breed = 'TUTOR_BREED';
 
   static const all = [
     home,
@@ -24,6 +25,7 @@ abstract final class TipScreens {
     bookingSchedule,
     bookingConfirm,
     appointment,
+    breed,
   ];
 }
 
@@ -97,6 +99,9 @@ abstract final class TipTargets {
   static const appointmentReschedule = 'tutor.appointment.reschedule';
   static const appointmentTransport = 'tutor.appointment.transport';
   static const appointmentCancel = 'tutor.appointment.cancel';
+  static const appointmentDriverMap = 'tutor.appointment.driver_map';
+  static const breedSearch = 'breed.search';
+  static const breedHelp = 'breed.help';
 }
 
 abstract final class TutorTips {
@@ -255,9 +260,32 @@ abstract final class TutorTips {
       text: 'Peça ao petshop a busca ou a entrega do pet.',
     ),
     AppTourTip(
+      target: TipTargets.appointmentDriverMap,
+      title: 'Entregador no mapa',
+      text:
+          'Do início do deslocamento até a entrega, o mapa mostra onde o entregador está e se atualiza sozinho.',
+    ),
+    AppTourTip(
       target: TipTargets.appointmentCancel,
       title: 'Cancelar agendamento',
       text: 'Cancela o agendamento depois que você confirma.',
     ),
   ];
 }
+
+/// Breed search of the pet form (features/pets/breed_field.dart, the same
+/// file in the Tutor and in the Equipe).
+const breedPickerTips = [
+  AppTourTip(
+    target: TipTargets.breedSearch,
+    title: 'Buscar raça',
+    text:
+        'Digite como souber: sem acento, com erro ou pelo apelido. A lista acha a raça mais próxima, e o porte vem dela.',
+  ),
+  AppTourTip(
+    target: TipTargets.breedHelp,
+    title: 'Não achou a raça?',
+    text:
+        'Diga se o seu pet tem raça e, para cachorro, quanto pesa adulto. Ele entra como vira-lata (SRD) ou como outra raça, do porte certo.',
+  ),
+];

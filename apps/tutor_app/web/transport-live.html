@@ -1,0 +1,20 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Localização do entregador</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>html,body,#map{height:100%;margin:0}body{font:14px Arial;background:#f4f6f3}#error{padding:16px}.driver{width:20px;height:20px;background:#176b65;border:3px solid white;border-radius:50%;box-shadow:0 2px 6px #0005}</style></head>
+<body><div id="map" role="img" aria-label="Mapa com a posição do entregador"><div id="error">Carregando mapa… Se não carregar, as etapas do transporte continuam valendo.</div></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+// Position of the driver of a transport on the way, sent by the Tutor app
+// (lib/features/transport/live_transport_map_web.dart). Only messages of the
+// page that opened this map, with its channel, move the marker.
+if(window.L){const q=new URLSearchParams(location.search),channel=q.get('channel');
+const valid=(lat,lng)=>Number.isFinite(lat)&&Number.isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180;
+const radius=v=>{const n=Number(v);return Number.isFinite(n)&&n>0&&n<=5000?n:0;};
+let lat=Number(q.get('lat')),lng=Number(q.get('lng'));if(!valid(lat,lng)){lat=-15.601;lng=-56.097;}
+document.getElementById('error').remove();const map=L.map('map').setView([lat,lng],16);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'}).addTo(map);
+const marker=L.marker([lat,lng],{keyboard:false,title:'Entregador',icon:L.divIcon({className:'',html:'<div class="driver"></div>',iconSize:[26,26],iconAnchor:[13,13]})}).addTo(map);
+const circle=L.circle([lat,lng],{radius:radius(q.get('accuracy')),color:'#176b65',weight:1,fillOpacity:.12}).addTo(map);
+addEventListener('message',e=>{if(e.origin!==location.origin||e.source!==parent)return;let v;try{v=JSON.parse(e.data);}catch(_){return;}
+if(!v||v.channel!==channel||!valid(v.lat,v.lng))return;marker.setLatLng([v.lat,v.lng]);circle.setLatLng([v.lat,v.lng]);circle.setRadius(radius(v.accuracy));map.panTo([v.lat,v.lng]);});}
+</script></body></html>

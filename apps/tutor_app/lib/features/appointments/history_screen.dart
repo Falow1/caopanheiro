@@ -11,27 +11,44 @@ import '../navigation/tutor_wide_layout.dart';
 import 'appointment_detail_screen.dart';
 
 class HistoryScreen extends StatelessWidget {
-  const HistoryScreen({super.key});
+  const HistoryScreen({super.key, this.petId, this.petName});
+
+  /// Only the visits of this pet, opened from its card in Pets.
+  final String? petId;
+  final String? petName;
 
   @override
   Widget build(BuildContext context) {
-    final items = appointmentHistory(AppScope.of(context).appointments);
+    final items = appointmentHistory(AppScope.of(context).appointments)
+        .where(
+          (appointment) =>
+              petId == null ||
+              appointment.items.any((item) => item.petId == petId),
+        )
+        .toList();
+    final name = petId == null ? null : petName;
     // A line per visit where the columns fit; cards otherwise.
     final rows = tutorTwoColumns(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Histórico')),
+      appBar: AppBar(
+        title: Text(name == null ? 'Histórico' : 'Histórico de $name'),
+      ),
       body: TutorPageBody(
         child: items.isEmpty
-            ? const EmptyState(
+            ? EmptyState(
                 icon: Icons.history_rounded,
                 title: 'Nenhum atendimento ainda',
-                message: 'Seus atendimentos anteriores aparecerão aqui.',
+                message: name == null
+                    ? 'Seus atendimentos anteriores aparecerão aqui.'
+                    : 'Os atendimentos anteriores de $name aparecerão aqui.',
               )
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Atendimentos anteriores',
+                    name == null
+                        ? 'Atendimentos anteriores'
+                        : 'Atendimentos de $name',
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
                   const SizedBox(height: 8),

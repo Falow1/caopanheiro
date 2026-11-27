@@ -7,3 +7,5 @@ export 'src/transport_status.dart';
 export 'src/pet_execution.dart';
 
 export 'src/pet_species.dart';
+export 'src/pet_breed.dart';
+export 'src/pet_service.dart';

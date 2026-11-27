@@ -356,7 +356,9 @@ export const decideBillingRequest = onCall(options, async (request) => {
     if (item.get('direction') === 'REFUND' && item.get('amountCents') > 0) {
       tx.create(db.collection('billingRequests').doc(), { kind: 'REFUND', status: 'PENDING', accountId: account.id, ownerName: item.get('ownerName') ?? '',
         fromPlanId: item.get('fromPlanId'), fromPlanName: item.get('fromPlanName'), toPlanId: toPlan.id, toPlanName: toPlan.get('name') ?? toPlan.id,
-        direction: 'REFUND', amountCents: item.get('amountCents'), days: item.get('days'), reason: 'PLAN_DOWNGRADE', createdAt: FieldValue.serverTimestamp() });
+        direction: 'REFUND', amountCents: item.get('amountCents'), days: item.get('days'), reason: 'PLAN_DOWNGRADE', createdAt: FieldValue.serverTimestamp(),
+        // The administrator who confirmed the change gets no push about it.
+        createdByPlatform: uid });
     }
     tx.update(ref, { status: 'APPROVED', ...decided });
     return { billingRequestId, status: 'APPROVED', planId: toPlan.id };

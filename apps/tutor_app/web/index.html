@@ -1,9 +1,12 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" translate="no">
 <head>
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
+  <!-- The Tutor is written in Portuguese: no "Translate page?" bar. -->
+  <meta name="google" content="notranslate">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Cãopanheiro — agendamentos e cuidados do seu pet.">
   <meta name="theme-color" content="#146B5C">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -17,9 +20,224 @@
   <style>
     /* Hide only the SDK's visual banner; local emulator guards remain active. */
     .firebase-emulator-warning { display: none !important; }
+
+    /* Opening (#splash), shown while Flutter loads and removed on its first
+       frame. It starts from the green of the installed app's splash
+       (background_color of the manifest) with the paw of the icon. On the
+       first access the paw prints walk to it; later the paw comes at once.
+       No motion when the system asks. */
+    html, body { margin: 0; height: 100%; background: #F4F6F3; }
+    #splash {
+      --mark: clamp(96px, 24vmin, 150px);
+      --t-pad: .8s; --t-name: 1.3s;
+      position: fixed; inset: 0; z-index: 2147483000; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      box-sizing: border-box;
+      padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+      background: radial-gradient(ellipse 120% 90% at 50% 42%, #1B7A68 0%, #146B5C 48%, #0E594C 100%);
+      color: #FFFDF8;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      transition: opacity .5s ease, visibility .5s;
+    }
+    #splash.splash-again { --t-pad: 0s; --t-name: .3s; }
+    #splash.splash-out { opacity: 0; visibility: hidden; }
+    .splash-trail { position: absolute; inset: 0; pointer-events: none; }
+    .splash-center {
+      position: relative; display: flex; flex-direction: column; align-items: center;
+      text-align: center; transition: transform .5s cubic-bezier(.4, 0, .2, 1);
+    }
+    #splash.splash-out .splash-center { transform: scale(1.08); }
+    .splash-logo { position: relative; width: var(--mark); height: var(--mark); }
+    .splash-logo svg {
+      display: block; width: 100%; height: 100%; overflow: visible;
+      filter: drop-shadow(0 10px 18px rgba(0, 0, 0, .22));
+    }
+    .splash-halo {
+      position: absolute; inset: -22%; border-radius: 50%;
+      border: 2px solid rgba(255, 253, 248, .5); opacity: 0;
+      animation: splash-halo 2.4s ease-out calc(var(--t-name) + .5s) infinite;
+    }
+    .splash-toe, .splash-pad { transform-box: fill-box; }
+    .splash-pad {
+      transform-origin: 50% 65%;
+      animation: splash-pop .55s cubic-bezier(.22, 1.5, .42, 1) var(--t-pad) both;
+    }
+    .splash-toe {
+      transform-origin: 50% 100%;
+      animation: splash-toe .5s cubic-bezier(.22, 1.6, .42, 1) both;
+    }
+    .splash-toe.t1 { animation-delay: calc(var(--t-pad) + .14s); }
+    .splash-toe.t2 { animation-delay: calc(var(--t-pad) + .22s); }
+    .splash-toe.t3 { animation-delay: calc(var(--t-pad) + .30s); }
+    .splash-toe.t4 { animation-delay: calc(var(--t-pad) + .38s); }
+    .splash-name {
+      margin: 22px 0 0; font-size: clamp(28px, 6.4vmin, 42px); font-weight: 800;
+      letter-spacing: -.015em; line-height: 1.1;
+      animation: splash-rise .55s cubic-bezier(.2, .8, .2, 1) var(--t-name) both;
+    }
+    .splash-tag {
+      margin: 8px 0 0; max-width: 22em; font-size: clamp(15px, 2.4vmin, 18px);
+      line-height: 1.4; color: rgba(255, 253, 248, .8);
+      animation: splash-rise .55s cubic-bezier(.2, .8, .2, 1) calc(var(--t-name) + .12s) both;
+    }
+    .splash-bar {
+      width: clamp(120px, 24vmin, 176px); height: 4px; margin-top: 28px;
+      border-radius: 2px; overflow: hidden; background: rgba(255, 253, 248, .16);
+      animation: splash-rise .4s ease-out calc(var(--t-name) + .3s) both;
+    }
+    .splash-bar span {
+      display: block; width: 38%; height: 100%; border-radius: inherit;
+      background: #F08A5D; animation: splash-load 1.2s ease-in-out infinite;
+    }
+    .splash-slow { margin: 16px 0 0; font-size: 15px; color: rgba(255, 253, 248, .8); }
+    .splash-print {
+      position: absolute; width: var(--size); height: var(--size);
+      margin: calc(var(--size) / -2) 0 0 calc(var(--size) / -2);
+      color: #FFFDF8; opacity: 0;
+      animation: splash-print 1.6s ease-out var(--delay) both;
+    }
+    @keyframes splash-pop {
+      from { transform: scale(0); opacity: 0; }
+      40% { opacity: 1; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    @keyframes splash-toe {
+      from { transform: translateY(40%) scale(0); opacity: 0; }
+      to { transform: none; opacity: 1; }
+    }
+    @keyframes splash-rise {
+      from { transform: translateY(14px); opacity: 0; }
+      to { transform: none; opacity: 1; }
+    }
+    @keyframes splash-load {
+      from { transform: translateX(-110%); }
+      to { transform: translateX(280%); }
+    }
+    @keyframes splash-halo {
+      from { transform: scale(.92); opacity: .55; }
+      to { transform: scale(1.35); opacity: 0; }
+    }
+    @keyframes splash-print {
+      from { transform: rotate(var(--turn)) scale(.3); opacity: 0; }
+      15% { transform: rotate(var(--turn)) scale(1); opacity: .38; }
+      to { transform: rotate(var(--turn)) scale(1); opacity: 0; }
+    }
+    @media (min-width: 900px) {
+      #splash { --mark: clamp(120px, 17vmin, 170px); }
+      .splash-name { margin-top: 28px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #splash, #splash * { animation: none !important; }
+      #splash { transition: opacity .2s linear, visibility .2s; }
+      .splash-print, .splash-halo, .splash-bar { display: none; }
+    }
   </style>
 </head>
 <body>
+  <div id="splash" role="status" aria-label="Abrindo o Tutor Cãopanheiro">
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+      <symbol id="splash-paw" viewBox="0 0 512 512">
+        <g fill="currentColor">
+          <ellipse cx="128" cy="216" rx="34" ry="45" transform="rotate(-30 128 216)"/>
+          <ellipse cx="204" cy="140" rx="38" ry="51" transform="rotate(-11 204 140)"/>
+          <ellipse cx="308" cy="140" rx="38" ry="51" transform="rotate(11 308 140)"/>
+          <ellipse cx="384" cy="216" rx="34" ry="45" transform="rotate(30 384 216)"/>
+          <path d="M256 226c-72 0-122 70-122 124 0 44 36 70 78 48 28-15 60-15 88 0 42 22 78-4 78-48 0-54-50-124-122-124z"/>
+        </g>
+      </symbol>
+    </svg>
+    <div class="splash-trail" aria-hidden="true"></div>
+    <div class="splash-center">
+      <div class="splash-logo" aria-hidden="true">
+        <span class="splash-halo"></span>
+        <svg viewBox="80 76 352 352" focusable="false">
+          <g fill="#FFFDF8">
+            <g class="splash-toe t1"><ellipse cx="128" cy="216" rx="34" ry="45" transform="rotate(-30 128 216)"/></g>
+            <g class="splash-toe t2"><ellipse cx="204" cy="140" rx="38" ry="51" transform="rotate(-11 204 140)"/></g>
+            <g class="splash-toe t3"><ellipse cx="308" cy="140" rx="38" ry="51" transform="rotate(11 308 140)"/></g>
+            <g class="splash-toe t4"><ellipse cx="384" cy="216" rx="34" ry="45" transform="rotate(30 384 216)"/></g>
+            <path class="splash-pad" d="M256 226c-72 0-122 70-122 124 0 44 36 70 78 48 28-15 60-15 88 0 42 22 78-4 78-48 0-54-50-124-122-124z"/>
+          </g>
+        </svg>
+      </div>
+      <p class="splash-name">Cãopanheiro</p>
+      <p class="splash-tag">Agendamentos e cuidados do seu pet.</p>
+      <div class="splash-bar" aria-hidden="true"><span></span></div>
+      <p class="splash-slow" hidden>Ainda carregando. Confira a sua conexão.</p>
+    </div>
+  </div>
+  <script>
+    // Opening of the Tutor: it stays until Flutter draws its first frame. The
+    // first access plays it whole, with the paw prints walking to the mark;
+    // later accesses leave as soon as the app is ready. The browser keeps only
+    // that the opening was seen, no data of the tutor.
+    (function () {
+      var splash = document.getElementById('splash');
+      if (!splash) return;
+      var started = Date.now();
+      var first = true;
+      try { first = localStorage.getItem('caopanheiro.opened') !== '1'; } catch (e) {}
+      var still = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      if (!first) splash.classList.add('splash-again');
+      else if (!still) { try { walk(); } catch (e) {} }
+
+      // Paw prints along a curve to the mark: from the left edge on wide
+      // windows, from the bottom on phones, one foot on each side.
+      function walk() {
+        var trail = splash.querySelector('.splash-trail');
+        var logo = splash.querySelector('.splash-logo').getBoundingClientRect();
+        var w = window.innerWidth, h = window.innerHeight;
+        var wide = w >= 900;
+        var size = Math.round(Math.max(18, Math.min(30, Math.min(w, h) * 0.05)));
+        var end = { x: logo.left - size * 0.8, y: logo.top + logo.height * 0.85 };
+        var from = wide ? { x: -size, y: h * 0.82 } : { x: w * 0.12, y: h + size };
+        var bend = wide ? { x: w * 0.25, y: h * 0.62 } : { x: w * 0.02, y: h * 0.72 };
+        var length = Math.hypot(end.x - from.x, end.y - from.y);
+        var count = Math.max(5, Math.min(12, Math.round(length / (size * 1.8))));
+        for (var i = 0; i < count; i++) {
+          var t = (i + 0.5) / count, u = 1 - t;
+          var x = u * u * from.x + 2 * u * t * bend.x + t * t * end.x;
+          var y = u * u * from.y + 2 * u * t * bend.y + t * t * end.y;
+          var dx = 2 * u * (bend.x - from.x) + 2 * t * (end.x - bend.x);
+          var dy = 2 * u * (bend.y - from.y) + 2 * t * (end.y - bend.y);
+          var norm = Math.hypot(dx, dy) || 1, side = i % 2 ? 1 : -1;
+          x += (-dy / norm) * side * size * 0.42;
+          y += (dx / norm) * side * size * 0.42;
+          var print = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          print.setAttribute('class', 'splash-print');
+          print.setAttribute('viewBox', '0 0 512 512');
+          var use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+          use.setAttribute('href', '#splash-paw');
+          print.appendChild(use);
+          print.style.left = x + 'px';
+          print.style.top = y + 'px';
+          print.style.setProperty('--size', size + 'px');
+          print.style.setProperty('--turn', (Math.atan2(dy, dx) * 180 / Math.PI + 90) + 'deg');
+          print.style.setProperty('--delay', (0.05 + i * 0.72 / count).toFixed(2) + 's');
+          trail.appendChild(print);
+        }
+      }
+
+      var gone = false;
+      function leave() {
+        if (gone) return;
+        gone = true;
+        try { localStorage.setItem('caopanheiro.opened', '1'); } catch (e) {}
+        splash.classList.add('splash-out');
+        setTimeout(function () {
+          if (splash.parentNode) splash.parentNode.removeChild(splash);
+        }, 600);
+      }
+      window.addEventListener('flutter-first-frame', function () {
+        var rest = first && !still ? 2300 - (Date.now() - started) : 0;
+        setTimeout(leave, Math.max(0, rest));
+      });
+      setTimeout(function () {
+        var slow = splash.querySelector('.splash-slow');
+        if (!gone && slow) slow.hidden = false;
+      }, 15000);
+    })();
+  </script>
   <script>
     // Chrome on Android announces that the Tutor can be installed, sometimes
     // before Flutter loads. Keep it for the Instalar button of the login, in

@@ -28,7 +28,8 @@ function jsonDoc(doc) {
   return { id: doc.id, ...value, createdAt: iso(value.createdAt), updatedAt: iso(value.updatedAt),
     ...(value.startedAt ? { startedAt: iso(value.startedAt) } : {}),
     ...(value.renewsAt ? { renewsAt: iso(value.renewsAt) } : {}),
-    ...(value.trialEndsAt ? { trialEndsAt: iso(value.trialEndsAt) } : {}) };
+    ...(value.trialEndsAt ? { trialEndsAt: iso(value.trialEndsAt) } : {}),
+    ...(value.lastAt ? { lastAt: iso(value.lastAt) } : {}) };
 }
 async function staffAccountState(users) {
   for (let start = 0; start < users.length; start += 100) {
@@ -81,7 +82,8 @@ export const getSaasData = onCall(options, async (request) => {
   const db = localBackend(); const uid = await actor(request);
   await requireEmailSession(request, db, uid);
   object(request.data, ['resource', 'cursor'], 'Consulta');
-  const resource = choice(request.data.resource, ['tenants', 'plans', 'subscriptions', 'audit'], 'Consulta');
+  // breedSuggestions: breeds people did not find on the list, by name and species only.
+  const resource = choice(request.data.resource, ['tenants', 'plans', 'subscriptions', 'audit', 'breedSuggestions'], 'Consulta');
   const cursor = request.data.cursor == null ? null : identifier(request.data.cursor, 'Página');
   return db.runTransaction(async (tx) => {
     await adminAccess(tx, db, uid);
@@ -161,6 +163,16 @@ export const saveTenant = onCall(options, async (request) => {
     if (!subscription.exists) tx.create(subscriptionRef, { recordNumber: subscriptionNumber, tenantId, planId: value.planId, status: 'PENDING', pendingReason: AWAITING_MANAGER, ...metadata(uid, false) });
     else tx.update(subscriptionRef, { recordNumber: subscriptionNumber, planId: value.planId, ...metadata(uid, true) });
     return { tenantId, recordNumber, subscriptionNumber };
+  });
+});
+/// The platform read the suggestion (and added the breed to the list, or not).
+export const removeBreedSuggestion = onCall(options, async (request) => {
+  object(request.data, ['requestId', 'suggestionId'], 'Pedido');
+  const suggestionId = identifier(request.data.suggestionId, 'Sugestão');
+  return platformCommand(request, 'removeBreedSuggestion', { suggestionId }, async ({ tx, db }) => {
+    const ref = db.doc(`breedSuggestions/${suggestionId}`); const old = await tx.get(ref);
+    if (old.exists) tx.delete(ref);
+    return { suggestionId, removed: old.exists };
   });
 });
 export const setTenantStatus = onCall(options, async (request) => {

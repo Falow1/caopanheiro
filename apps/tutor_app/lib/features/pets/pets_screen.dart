@@ -1,14 +1,17 @@
+import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
+    show petServiceText;
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppScreenTips, AppTourTarget;
 import '../../core/screen_tips.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppDimensions, AppPawMark, AppRadii;
+    show AppDimensions, AppPetIcon, AppRadii;
 
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../domain/models/pet.dart';
 import '../../state/app_scope.dart';
+import '../appointments/history_screen.dart';
 import '../home/read_only_company.dart';
 import '../navigation/tutor_shell_scope.dart';
 import '../navigation/tutor_wide_layout.dart';
@@ -145,50 +148,97 @@ class _PetTile extends StatelessWidget {
   final EdgeInsets? margin;
 
   @override
-  Widget build(BuildContext context) => Card(
-    margin: margin,
-    child: InkWell(
-      borderRadius: AppRadii.r22,
-      onTap: () => AppScope.of(context).companyReadOnly
-          ? showReadOnlyCompany(context)
-          : Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => PetFormScreen(pet: pet)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              width: 62,
-              height: 62,
-              decoration: const BoxDecoration(
-                color: AppColors.mint,
-                shape: BoxShape.circle,
+  Widget build(BuildContext context) {
+    final controller = AppScope.of(context);
+    final reason = pet.serviceReason;
+    final phone = controller.companyContactPhone;
+    return Card(
+      margin: margin,
+      child: InkWell(
+        borderRadius: AppRadii.r22,
+        onTap: () => controller.companyReadOnly
+            ? showReadOnlyCompany(context)
+            : Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => PetFormScreen(pet: pet)),
               ),
-              // The paw of the brand, drawn, instead of the emoji (R7-i).
-              child: const Center(
-                child: AppPawMark(size: 30, color: AppColors.primary),
-              ),
-            ),
-            const SizedBox(width: 15),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Text(
-                    pet.name,
-                    style: Theme.of(context).textTheme.titleMedium,
+                  // The icon of the breed; the paw of the brand when unknown.
+                  AppPetIcon(
+                    icon: pet.breedIcon,
+                    size: 62,
+                    semanticLabel: pet.breed,
                   ),
-                  const SizedBox(height: 4),
-                  Text('${pet.species} · ${pet.breed}'),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          pet.name,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 4),
+                        Text('${pet.species} · ${pet.breed}'),
+                        if (pet.breedPending)
+                          const Text(
+                            'Toque para escolher a raça na lista.',
+                            style: TextStyle(color: AppColors.muted),
+                          ),
+                        // Not served now: the message only, never the reason the
+                        // team wrote for "Não atender este pet".
+                        if (reason != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            petServiceText(
+                              reason,
+                              petName: pet.name,
+                              breed: pet.breedEntry,
+                              petshop: controller.companyName,
+                              tutor: true,
+                            ),
+                            style: const TextStyle(color: AppColors.warning),
+                          ),
+                          if (phone.isNotEmpty)
+                            Text(
+                              'Telefone do petshop: $phone',
+                              style: const TextStyle(color: AppColors.warning),
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.edit_outlined,
+                    size: 20,
+                    color: AppColors.muted,
+                  ),
                 ],
               ),
-            ),
-            const Icon(Icons.edit_outlined, size: 20, color: AppColors.muted),
-          ],
+              const SizedBox(height: 8),
+              // The visits of this pet only, apart from the full history.
+              TextButton.icon(
+                key: ValueKey('pet-history-${pet.id}'),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        HistoryScreen(petId: pet.id, petName: pet.name),
+                  ),
+                ),
+                icon: const Icon(Icons.history_rounded),
+                label: Text('Histórico de ${pet.name}'),
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }

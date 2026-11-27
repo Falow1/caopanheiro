@@ -2,7 +2,7 @@ name: saas_app
 description: "Aplicativo administrativo SaaS da plataforma de pet shops."
 publish_to: 'none'
 resolution: workspace
-version: 1.0.6+21
+version: 1.3.0+24
 
 environment:
   sdk: ^3.12.2
@@ -16,6 +16,7 @@ dependencies:
   caopanheiro_contracts: ^0.1.0
   caopanheiro_design_system: ^0.1.0
   cupertino_icons: ^1.0.8
+  firebase_messaging: 17.0.0
 
 dev_dependencies:
   caopanheiro_test_support:

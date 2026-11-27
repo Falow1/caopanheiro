@@ -162,9 +162,9 @@ class _SupportRequestFormScreenState extends State<SupportRequestFormScreen> {
       context,
     ).createSupportRequest(_subject.text.trim(), _message.text.trim());
     if (!mounted || !sent) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Pedido de suporte enviado.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Pedido de suporte enviado.')));
     Navigator.of(context).pop();
   }
 

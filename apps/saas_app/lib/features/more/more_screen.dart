@@ -6,6 +6,7 @@ import '../../core/app_theme.dart';
 import '../../core/widgets.dart';
 import '../../state/app_scope.dart';
 import '../plans/plans_screen.dart';
+import '../support/breed_suggestions_screen.dart';
 import '../support/support_screen.dart';
 import 'confirm_sign_out.dart';
 import 'health_screen.dart';
@@ -40,6 +41,12 @@ class MoreScreen extends StatelessWidget {
                 count: AppScope.of(context).supportWaitingCount,
                 onTap: () => _open(context, const SupportScreen()),
               ),
+              if (controller.breedSuggestionsAvailable)
+                _Menu(
+                  icon: Icons.pets_outlined,
+                  title: 'Raças sugeridas',
+                  onTap: () => _open(context, const BreedSuggestionsScreen()),
+                ),
               _Menu(
                 icon: Icons.monitor_heart_outlined,
                 title: 'Saúde da plataforma',

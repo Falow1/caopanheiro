@@ -13,7 +13,10 @@ class BlocksScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final user = controller.user;
-    final allowed = user != null && ((user.isManager && user.canManage('APPOINTMENTS')) || user.canManageBlocks);
+    final allowed =
+        user != null &&
+        ((user.isManager && user.canManage('APPOINTMENTS')) ||
+            user.canManageBlocks);
     if (!allowed) {
       return const Scaffold(
         body: Center(child: Text('Acesso restrito à equipe da empresa.')),

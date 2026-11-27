@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppNotice, AppNoticeBell, AppNoticesScreen;
 import 'package:flutter/material.dart';
 
+import '../data/push_device.dart';
 import '../domain/repositories/team_extras_repository.dart';
 
 /// Bell of one area (gestão/atendimento, profissional or entregador) in one
@@ -31,6 +34,37 @@ class _RoleNoticeBellState extends State<RoleNoticeBell> {
   void initState() {
     super.initState();
     _count();
+    PushDevice.opened.addListener(_tapped);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tapped());
+  }
+
+  @override
+  void dispose() {
+    PushDevice.opened.removeListener(_tapped);
+    super.dispose();
+  }
+
+  /// A push of a notice of this petshop, tapped by the person, opens the
+  /// notices as the bell does. Another petshop keeps it until it opens.
+  void _tapped() {
+    final source = widget.source, tenant = widget.tenantId;
+    if (!mounted || source == null || tenant == null) return;
+    final data = PushDevice.take(
+      (data) => data['kind'] == 'NOTICE' && data['tenantId'] == tenant,
+    );
+    if (data != null) unawaited(_open(source, tenant));
+  }
+
+  Future<void> _open(RoleNoticesSource source, String tenant) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AppNoticesScreen(
+          load: () => _load(source, tenant),
+          onSeen: () => source.markRoleNoticesSeen(tenant),
+        ),
+      ),
+    );
+    if (mounted) _count();
   }
 
   @override
@@ -41,6 +75,7 @@ class _RoleNoticeBellState extends State<RoleNoticeBell> {
         !identical(old.source, widget.source)) {
       if (old.tenantId != widget.tenantId) _unread = 0;
       _count();
+      _tapped();
     }
   }
 
@@ -72,17 +107,7 @@ class _RoleNoticeBellState extends State<RoleNoticeBell> {
     if (source == null || tenant == null) return const SizedBox.shrink();
     return AppNoticeBell(
       unread: _unread,
-      onPressed: () async {
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => AppNoticesScreen(
-              load: () => _load(source, tenant),
-              onSeen: () => source.markRoleNoticesSeen(tenant),
-            ),
-          ),
-        );
-        if (mounted) _count();
-      },
+      onPressed: () => _open(source, tenant),
     );
   }
 }

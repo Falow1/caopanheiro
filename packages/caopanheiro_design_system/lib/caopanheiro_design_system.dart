@@ -20,3 +20,5 @@ export 'src/app_notices.dart';
 export 'src/app_password_recovery.dart';
 export 'src/app_screen_tour.dart';
 export 'src/app_window_class.dart';
+export 'src/app_pet_icon.dart';
+export 'src/app_code_verification.dart';

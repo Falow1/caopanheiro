@@ -31,7 +31,11 @@ class _MainShellState extends State<MainShell> {
     super.didChangeDependencies();
     final controller = AppScope.of(context);
     if (controller.catalogOnly) {
-      _lifecycle ??= AppLifecycleListener(onResume: () => _refresh(controller));
+      // Back to the app the reading runs quietly: the screen keeps
+      // answering taps instead of waiting for three loadings in a row.
+      _lifecycle ??= AppLifecycleListener(
+        onResume: () => _refresh(controller, quiet: true),
+      );
       if (!_loaded) {
         _loaded = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -47,12 +51,16 @@ class _MainShellState extends State<MainShell> {
     if (controller.user != null) await controller.refreshCustomers();
   }
 
-  Future<void> _refresh(AppController controller) async {
+  Future<void> _refresh(AppController controller, {bool quiet = false}) async {
     if (controller.user == null || controller.busy) return;
-    await controller.refreshServices();
-    if (controller.user != null) await controller.refreshAgenda();
-    if (controller.user != null) {
-      await controller.refreshCustomers();
+    if (quiet) {
+      await controller.refreshOnResume();
+    } else {
+      await controller.refreshServices();
+      if (controller.user != null) await controller.refreshAgenda();
+      if (controller.user != null) {
+        await controller.refreshCustomers();
+      }
     }
     if (mounted && controller.user == null && controller.companies.isEmpty) {
       Navigator.of(context).pushAndRemoveUntil(

@@ -4,7 +4,7 @@ import { FieldPath } from 'firebase-admin/firestore';
 import { actor, identifier, invalid, localBackend, object, options, teamAccess } from './runtime.js';
 import { effectiveManagementPermissions } from './management_permissions.js';
 import { publicProfessional, requirePrincipal } from './staff_privacy.js';
-import { jsonCustomer } from './customers.js';
+import { teamCustomers } from './customers.js';
 import { jsonAppointment } from './scheduling.js';
 import { professionalRows } from './profiles.js';
 import { returnReadiness } from './pet_execution.js';
@@ -57,7 +57,7 @@ export const getCompanyView = onCall(options, async request => {
     let items;
     if(role==='PROFESSIONAL')items=page.docs.flatMap(professionalRows);
     else if(resource==='appointments')items=page.docs.map(jsonAppointment);
-    else if(resource==='customers')items=page.docs.map(jsonCustomer);
+    else if(resource==='customers')items=(await teamCustomers(tx,db,tenantId,page.docs)).customers;
     else if(resource==='professionals')items=page.docs.map(publicProfessional);
     else if(resource==='members')items=page.docs.filter(doc=>doc.get('roles')?.some(r=>['MANAGER','ATTENDANT','PROFESSIONAL','DRIVER'].includes(r)) || doc.get('staffInvitationPending') || doc.get('activationPending')).map(doc=>({
       id:doc.id,name:doc.get('name')||'Convite pendente',roles:doc.get('roles')??[],invitedRoles:doc.get('invitedRoles')??[],active:doc.get('active')===true,

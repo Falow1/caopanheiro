@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
-    show AppRadii, AppTextStyles;
+    show AppPetIcon, AppRadii, AppTextStyles;
 
 import '../../core/app_theme.dart';
 import '../../core/formatters.dart';
@@ -41,9 +41,17 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '${pet.emoji}  ${pet.name}',
-                    style: Theme.of(context).textTheme.titleLarge,
+                  Row(
+                    children: [
+                      AppPetIcon(icon: pet.breedIcon, size: 36),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          pet.name,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   ...available.map((service) {

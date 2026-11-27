@@ -1,5 +1,5 @@
 import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
-    show PetExecution;
+    show PetExecution, PetPolicy, PetServiceReason;
 import 'package:caopanheiro_core/caopanheiro_core.dart';
 
 import '../domain/models/appointment.dart';
@@ -8,7 +8,9 @@ import '../domain/models/service.dart';
 import '../domain/models/tutor.dart';
 import '../domain/policies/tutor_invite.dart';
 import '../domain/repositories/petshop_repository.dart';
+import '../domain/repositories/login_code_repository.dart';
 import '../domain/repositories/tutor_extras_repository.dart';
+import '../domain/repositories/tutor_pet_policy.dart';
 import '../domain/repositories/tutor_transport_repository.dart';
 import '../domain/repositories/tutor_session.dart';
 
@@ -23,11 +25,28 @@ class FirebasePetshopRepository
         TutorSession,
         TutorTransportRepository,
         TutorExtrasRepository,
+        TutorPetPolicySource,
         AccountDeletionRepository,
         ScreenTipsRepository,
         LiveSignalsAware,
-        NetworkProblemSource {
+        NetworkProblemSource,
+        LoginCodeRepository {
   FirebasePetshopRepository(this._gateway);
+
+  @override
+  Future<String> requestLoginCode() async {
+    final result = await _gateway.call('requestLoginCode', {});
+    return result['challengeId'] as String;
+  }
+
+  @override
+  Future<void> verifyLoginCode(String challengeId, String code) async {
+    await _gateway.call('verifyLoginCode', {
+      'challengeId': challengeId,
+      'code': code,
+    });
+  }
+
   final LocalFirebaseGateway _gateway;
 
   /// Reason of the latest call without answer, for the read-only banner.
@@ -325,6 +344,10 @@ class FirebasePetshopRepository
           'cursor': cursor,
         });
         _check(epoch, uid, tenant);
+        // The rule of pets comes with the customer record of the petshop.
+        if (resource == 'customer') {
+          _petPolicy = PetPolicy.fromJson(page['petPolicy']);
+        }
         rows.addAll((page['items'] as List).map(_map));
         cursor = page['nextCursor'] as String?;
       } while (cursor != null);
@@ -336,16 +359,31 @@ class FirebasePetshopRepository
     }
   }
 
-  Pet _pet(Map<String, dynamic> value) => Pet(
-    id: value['id'] as String,
-    recordNumber: readRecordNumber(value['recordNumber']),
-    name: value['name'] as String,
-    species: value['species'] as String,
-    breed: value['breed'] as String,
-    size: value['size'] as String,
-    birthDate: DateTime.parse(value['birthDate'] as String),
-    notes: value['notes'] as String? ?? '',
-  );
+  PetPolicy _petPolicy = const PetPolicy();
+  @override
+  PetPolicy get petPolicy => _petPolicy;
+
+  Pet _pet(Map<String, dynamic> value) {
+    final service = value['service'] is Map ? _map(value['service']) : null;
+    return Pet(
+      id: value['id'] as String,
+      recordNumber: readRecordNumber(value['recordNumber']),
+      name: value['name'] as String,
+      species: value['species'] as String,
+      breed: value['breed'] as String,
+      size: value['size'] as String,
+      birthDate: DateTime.parse(value['birthDate'] as String),
+      notes: value['notes'] as String? ?? '',
+      breedCode: value['breedCode'] as String?,
+      legacyBreed: value['legacyBreed'] as String?,
+      breedPending: value['breedPending'] == true,
+      serviceReason: service == null || service['served'] != false
+          ? null
+          : PetServiceReason.fromWire(service['reason']) ??
+                PetServiceReason.breed,
+    );
+  }
+
   @override
   Future<List<Pet>> getPets() async {
     final customer = await _read('customer');
@@ -465,8 +503,14 @@ class FirebasePetshopRepository
       'pet': {
         'name': pet.name,
         'species': pet.species,
-        'breed': pet.breed,
-        'size': pet.size,
+        // The breed of the list; the server derives its name and size.
+        if (pet.breedCode != null)
+          'breedCode': pet.breedCode
+        else ...{
+          'breed': pet.breed,
+          'size': pet.size,
+        },
+        if (pet.breedSuggestion != null) 'breedSuggestion': pet.breedSuggestion,
         'birthDate':
             '${pet.birthDate.year.toString().padLeft(4, '0')}-${pet.birthDate.month.toString().padLeft(2, '0')}-${pet.birthDate.day.toString().padLeft(2, '0')}',
         'notes': pet.notes,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
     show AppDimensions, AppRefreshBody, AppOfflineBanner;
 
+import '../../data/push_device.dart';
 import '../../state/app_scope.dart';
 import '../auth/login_screen.dart';
 import '../auth/email_code_screen.dart';
@@ -11,7 +12,9 @@ import '../auth/email_code_screen.dart';
 import '../audit/audit_screen.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../more/more_screen.dart';
+import '../subscriptions/billing_requests_screen.dart';
 import '../subscriptions/subscriptions_screen.dart';
+import '../support/support_requests_screen.dart';
 import '../tenants/tenants_screen.dart';
 
 class MainShell extends StatefulWidget {
@@ -26,12 +29,35 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    PushDevice.opened.addListener(_tapped);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tapped());
   }
 
   @override
   void dispose() {
+    PushDevice.opened.removeListener(_tapped);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// A tapped push opens what it announced: the subscription requests or
+  /// the support request.
+  void _tapped() {
+    if (!mounted) return;
+    final data = PushDevice.take(
+      (data) => data['kind'] == 'BILLING_REQUEST' || data['kind'] == 'SUPPORT',
+    );
+    if (data == null) return;
+    final support = data['supportRequestId'];
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => data['kind'] == 'BILLING_REQUEST'
+            ? const BillingRequestsScreen()
+            : support == null
+            ? const SupportRequestsScreen()
+            : SupportRequestDetailScreen(requestId: support),
+      ),
+    );
   }
 
   @override

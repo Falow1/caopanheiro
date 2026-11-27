@@ -5,6 +5,7 @@ import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
 class InternalUser {
   const InternalUser({
     required this.name,
+    this.phone = '',
     required this.role,
     this.roles = const [],
     this.managementDelegated = false,
@@ -14,6 +15,9 @@ class InternalUser {
     this.canRunService = false,
   });
   final String name;
+
+  /// The phone of the person, as they keep it in their profile.
+  final String phone;
   final TenantRole role;
   final List<TenantRole> roles;
   final bool managementDelegated;
@@ -43,6 +47,7 @@ class InternalUser {
     if (!availableRoles.contains(value)) return this;
     return InternalUser(
       name: name,
+      phone: phone,
       role: value,
       roles: availableRoles,
       managementDelegated: managementDelegated,
@@ -54,6 +59,19 @@ class InternalUser {
       canRunService: value == TenantRole.manager && canManage('APPOINTMENTS'),
     );
   }
+
+  /// The same access with the name and phone the person saved.
+  InternalUser withContact(String name, String phone) => InternalUser(
+    name: name,
+    phone: phone,
+    role: role,
+    roles: roles,
+    managementDelegated: managementDelegated,
+    managementPermissions: managementPermissions,
+    canManageServices: canManageServices,
+    canManageBlocks: canManageBlocks,
+    canRunService: canRunService,
+  );
 
   final bool canManageServices;
   final bool canManageBlocks;

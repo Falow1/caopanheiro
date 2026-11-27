@@ -153,6 +153,10 @@ class _TransportReviewNoticeState extends State<TransportReviewNotice>
     if (_error == null && _count == 0 || c.user == null || c.catalogOffline) {
       return const SizedBox.shrink();
     }
+    // Who works in more than one petshop sees which one the alert is about.
+    final company = !widget.allCompanies && c.companies.length > 1
+        ? c.company?.name
+        : null;
     return Card(
       child: TextButton.icon(
         key: const ValueKey('transport-review-notice-action'),
@@ -166,7 +170,7 @@ class _TransportReviewNoticeState extends State<TransportReviewNotice>
         ),
         label: Text(
           _error ??
-              'Revisar $_count ${_count == 1 ? 'transporte atrasado' : 'transportes atrasados'}',
+              'Revisar $_count ${_count == 1 ? 'transporte atrasado' : 'transportes atrasados'}${company == null ? '' : ' · $company'}',
         ),
       ),
     );

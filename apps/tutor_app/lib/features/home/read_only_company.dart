@@ -3,6 +3,7 @@ import 'package:caopanheiro_design_system/caopanheiro_design_system.dart'
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../domain/policies/contact_input.dart' show displayPhone;
 import '../../state/app_scope.dart';
 
 const readOnlyTitle = 'Indisponível no app no momento';
@@ -83,7 +84,7 @@ class ReadOnlyCompanyBanner extends StatelessWidget {
 
 String _byPhone(String phone) => phone.isEmpty
     ? 'Para agendar ou remarcar, fale com o petshop.'
-    : 'Para agendar ou remarcar, fale com o petshop: $phone';
+    : 'Para agendar ou remarcar, fale com o petshop: ${displayPhone(phone)}';
 
 /// DD/MM, without the year: the notice is about the next days.
 String formatShortDate(DateTime value) =>

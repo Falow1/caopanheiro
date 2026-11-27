@@ -7,6 +7,7 @@ import { onCall } from './callable.js';
 import { actor, identifier, localBackend, object, options, teamAccess } from './runtime.js';
 import { ACCESS_PAUSED, principalMember } from './access_policy.js';
 import { tenantAudit } from './tenant_audit.js';
+import { normalizedPet } from './pet_policy.js';
 
 export const MAX_EXPORT_CUSTOMERS = 2000;
 export const MAX_EXPORT_APPOINTMENTS = 5000;
@@ -28,10 +29,12 @@ const money = (cents) => Number.isSafeInteger(cents) ? (cents / 100).toFixed(2).
 export function exportFiles(customers, appointments) {
   const ordered = [...customers].sort((a, b) => (a.recordNumber ?? 0) - (b.recordNumber ?? 0) || String(a.name).localeCompare(String(b.name), 'pt-BR'));
   const customerRows = ordered.map((item) => [item.recordNumber ?? '', item.name ?? '', item.phone ?? '', item.email ?? '', item.tutorUid ? 'Sim' : 'Não']);
-  const petRows = ordered.flatMap((item) => Object.values(item.pets ?? {})
+  // Breed and size from the list; the text of a pet saved before the list
+  // that was not found on it goes in its own column.
+  const petRows = ordered.flatMap((item) => Object.values(item.pets ?? {}).map(normalizedPet)
     .sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'))
     .map((pet) => [item.recordNumber ?? '', item.name ?? '', pet.recordNumber ?? '', pet.name ?? '', pet.species ?? '', pet.breed ?? '',
-      pet.size ?? '', pet.birthDate ?? '', pet.notes ?? '']));
+      pet.size ?? '', pet.legacyBreed ?? '', pet.birthDate ?? '', pet.notes ?? '']));
   const appointmentRows = [...appointments].sort((a, b) => String(a.localStartsAt ?? '').localeCompare(String(b.localStartsAt ?? '')))
     .map((item) => {
       const local = String(item.localStartsAt ?? '');
@@ -43,7 +46,7 @@ export function exportFiles(customers, appointments) {
   return {
     files: [
       { name: 'clientes.csv', content: csvTable(['Número', 'Nome', 'Telefone', 'E-mail', 'Usa o app'], customerRows) },
-      { name: 'pets.csv', content: csvTable(['Número do cliente', 'Cliente', 'Número do pet', 'Pet', 'Espécie', 'Raça', 'Porte', 'Nascimento', 'Observações'], petRows) },
+      { name: 'pets.csv', content: csvTable(['Número do cliente', 'Cliente', 'Número do pet', 'Pet', 'Espécie', 'Raça', 'Porte', 'Raça informada antes da lista', 'Nascimento', 'Observações'], petRows) },
       { name: 'agendamentos.csv', content: csvTable(['Número', 'Data', 'Hora', 'Cliente', 'Pets', 'Serviços', 'Profissional', 'Situação', 'Valor (R$)', 'Duração (min)'], appointmentRows) },
     ],
     counts: { customers: customerRows.length, pets: petRows.length, appointments: appointmentRows.length },

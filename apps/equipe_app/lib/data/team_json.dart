@@ -1,21 +1,44 @@
 import 'package:caopanheiro_contracts/caopanheiro_contracts.dart'
-    show PetExecution;
+    show PetExecution, PetServiceReason;
 import 'package:caopanheiro_core/caopanheiro_core.dart' show readRecordNumber;
 import '../domain/models.dart';
 import '../domain/models/scheduling_policy.dart';
 
 Map<String, dynamic> jsonMap(Object? value) =>
     Map<String, dynamic>.from(value as Map);
-Pet petFromJson(Map<String, dynamic> value) => Pet(
-  id: value['id'] as String,
-  recordNumber: readRecordNumber(value['recordNumber']),
-  name: value['name'] as String,
-  species: value['species'] as String,
-  breed: value['breed'] as String,
-  size: value['size'] as String,
-  birthDate: DateTime.parse(value['birthDate'] as String),
-  notes: value['notes'] as String? ?? '',
-);
+Pet petFromJson(Map<String, dynamic> value) {
+  final service = value['service'] is Map ? jsonMap(value['service']) : null;
+  final block = value['block'] is Map ? jsonMap(value['block']) : null;
+  return Pet(
+    id: value['id'] as String,
+    recordNumber: readRecordNumber(value['recordNumber']),
+    name: value['name'] as String,
+    species: value['species'] as String,
+    breed: value['breed'] as String,
+    size: value['size'] as String,
+    birthDate: DateTime.parse(value['birthDate'] as String),
+    notes: value['notes'] as String? ?? '',
+    breedCode: value['breedCode'] as String?,
+    legacyBreed: value['legacyBreed'] as String?,
+    breedPending: value['breedPending'] == true,
+    serviceReason: service == null || service['served'] == true
+        ? null
+        : PetServiceReason.fromWire(service['reason']) ??
+              PetServiceReason.breed,
+    block: block == null
+        ? null
+        : PetBlock(
+            reason: block['reason'] as String? ?? '',
+            createdAt: DateTime.tryParse(block['createdAt'] as String? ?? ''),
+            createdByName: block['createdByName'] as String?,
+          ),
+  );
+}
+
+String petBirthDate(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
+/// Pet as kept in the offline copy, with what the server said about it.
 Map<String, dynamic> petToJson(Pet value) => {
   'id': value.id,
   if (value.recordNumber != null) 'recordNumber': value.recordNumber,
@@ -23,9 +46,37 @@ Map<String, dynamic> petToJson(Pet value) => {
   'species': value.species,
   'breed': value.breed,
   'size': value.size,
-  'birthDate':
-      '${value.birthDate.year.toString().padLeft(4, '0')}-${value.birthDate.month.toString().padLeft(2, '0')}-${value.birthDate.day.toString().padLeft(2, '0')}',
+  'birthDate': petBirthDate(value.birthDate),
   'notes': value.notes,
+  if (value.breedCode != null) 'breedCode': value.breedCode,
+  if (value.legacyBreed != null) 'legacyBreed': value.legacyBreed,
+  if (value.breedPending) 'breedPending': true,
+  if (value.serviceReason != null)
+    'service': {'served': false, 'reason': value.serviceReason!.wire},
+  if (value.block != null)
+    'block': {
+      'reason': value.block!.reason,
+      if (value.block!.createdAt != null)
+        'createdAt': value.block!.createdAt!.toIso8601String(),
+      if (value.block!.createdByName != null)
+        'createdByName': value.block!.createdByName,
+    },
+};
+
+/// Pet sent to savePet: the breed goes as the code of the list; the server
+/// takes the name and the size from it.
+Map<String, dynamic> petCommandJson(Pet value) => {
+  'name': value.name,
+  'species': value.species,
+  if (value.breedCode != null)
+    'breedCode': value.breedCode
+  else ...{
+    'breed': value.breed,
+    'size': value.size,
+  },
+  'birthDate': petBirthDate(value.birthDate),
+  'notes': value.notes,
+  if (value.breedSuggestion != null) 'breedSuggestion': value.breedSuggestion,
 };
 Customer customerFromJson(Map<String, dynamic> value) => Customer(
   id: value['id'] as String,
