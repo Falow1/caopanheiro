@@ -41,5 +41,9 @@ Future<DevicePoint> readDeviceLocation() {
       maximumAge: 60000,
     ),
   );
-  return completer.future;
+  return completer.future.timeout(
+    const Duration(seconds: 20),
+    onTimeout: () =>
+        throw const DeviceLocationException(DeviceLocationProblem.timeout),
+  );
 }

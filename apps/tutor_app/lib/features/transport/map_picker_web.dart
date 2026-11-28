@@ -13,10 +13,12 @@ class MapPicker extends StatefulWidget {
     super.key,
     this.center,
     this.point,
+    this.enabled = true,
     required this.onSelected,
   });
   final Map<String, dynamic>? center;
   final Map<String, dynamic>? point;
+  final bool enabled;
   final void Function(double lat, double lng) onSelected;
   @override
   State<MapPicker> createState() => _MapPickerState();
@@ -26,8 +28,9 @@ class _MapPickerState extends State<MapPicker> {
   final _channel = newRecordId();
   web.HTMLIFrameElement? _frame;
   late final JSFunction _listener;
-  // The last point the map itself reported, so it is not sent back.
-  (double, double)? _fromMap;
+  bool _ready = false;
+  (double, double)? _shownPoint;
+  bool? _shownEnabled;
 
   static (double, double)? _pair(Map<String, dynamic>? value) {
     final lat = value?['lat'], lng = value?['lng'];
@@ -46,6 +49,11 @@ class _MapPickerState extends State<MapPicker> {
         final value =
             jsonDecode((e.data as JSString).toDart) as Map<String, dynamic>;
         if (value['channel'] != _channel) return;
+        if (value['ready'] == true) {
+          _ready = true;
+          _sync(force: true);
+          return;
+        }
         final lat = value['lat'], lng = value['lng'];
         if (lat is num &&
             lng is num &&
@@ -55,7 +63,11 @@ class _MapPickerState extends State<MapPicker> {
             lat <= 90 &&
             lng >= -180 &&
             lng <= 180) {
-          _fromMap = (lat.toDouble(), lng.toDouble());
+          if (!widget.enabled) {
+            _sync(force: true);
+            return;
+          }
+          _shownPoint = (lat.toDouble(), lng.toDouble());
           widget.onSelected(lat.toDouble(), lng.toDouble());
         }
       } catch (_) {
@@ -68,14 +80,26 @@ class _MapPickerState extends State<MapPicker> {
   @override
   void didUpdateWidget(MapPicker old) {
     super.didUpdateWidget(old);
+    _sync();
+  }
+
+  void _sync({bool force = false}) {
     final point = _pair(widget.point);
-    if (point == null || point == _pair(old.point) || point == _fromMap) {
+    if (!_ready ||
+        (!force && point == _shownPoint && widget.enabled == _shownEnabled)) {
       return;
     }
     _frame?.contentWindow?.postMessage(
-      jsonEncode({'channel': _channel, 'lat': point.$1, 'lng': point.$2}).toJS,
+      jsonEncode({
+        'channel': _channel,
+        'point': point == null ? null : {'lat': point.$1, 'lng': point.$2},
+        'enabled': widget.enabled,
+        'center': point != _shownPoint,
+      }).toJS,
       Uri.base.origin.toJS,
     );
+    _shownPoint = point;
+    _shownEnabled = widget.enabled;
   }
 
   @override
@@ -90,11 +114,14 @@ class _MapPickerState extends State<MapPicker> {
     onElementCreated: (element) {
       final frame = element as web.HTMLIFrameElement;
       _frame = frame;
+      _ready = false;
+      _shownEnabled = null;
       frame.title = 'Marcar endereço no OpenStreetMap';
       frame.style.border = '0';
       frame.style.width = '100%';
       frame.style.height = '100%';
       final point = _pair(widget.point);
+      _shownPoint = point;
       final center = point ?? _pair(widget.center);
       final uri = Uri.base
           .resolve('transport-map.html')
@@ -104,6 +131,7 @@ class _MapPickerState extends State<MapPicker> {
               'lat': '${center?.$1 ?? -15.601}',
               'lng': '${center?.$2 ?? -56.097}',
               if (point != null) 'marker': '1',
+              if (!widget.enabled) 'disabled': '1',
             },
           );
       frame.src = uri.toString();

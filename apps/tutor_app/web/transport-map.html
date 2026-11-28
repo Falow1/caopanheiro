@@ -8,14 +8,55 @@
 // dragged to adjust it, and the page that holds the map moves it (search
 // result, location of the device). Messages go only to and from the same
 // origin, the parent window and this channel.
-if(window.L){const q=new URLSearchParams(location.search),channel=q.get('channel'),lat=Number(q.get('lat')),lng=Number(q.get('lng'));document.getElementById('error').remove();
-const valid=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)&&a>=-90&&a<=90&&b>=-180&&b<=180;
-const map=L.map('map').setView([valid(lat,lng)?lat:-15.601,valid(lat,lng)?lng:-56.097],q.get('marker')==='1'?17:14);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'}).addTo(map);
-let marker;const icon=L.divIcon({className:'',html:'<div class="pin"></div>',iconSize:[26,26],iconAnchor:[13,13]});
-const send=p=>parent.postMessage(JSON.stringify({channel,lat:p.lat,lng:p.lng}),location.origin);
-const place=(p,center)=>{if(marker)marker.setLatLng(p);else{marker=L.marker(p,{icon,draggable:true,keyboard:true,title:'Ponto do endereço',alt:'Ponto do endereço'}).addTo(map);marker.on('dragend',()=>send(marker.getLatLng()));}if(center)map.setView(p,Math.max(map.getZoom(),17));};
-if(q.get('marker')==='1'&&valid(lat,lng))place(L.latLng(lat,lng),false);
-map.on('click',e=>{place(e.latlng,false);send(e.latlng);});
-window.addEventListener('message',e=>{if(e.origin!==location.origin||e.source!==parent)return;try{const v=JSON.parse(e.data);if(v.channel!==channel||!valid(v.lat,v.lng))return;place(L.latLng(v.lat,v.lng),true);}catch(_){}});}
+if (window.L) {
+  const q = new URLSearchParams(location.search);
+  const channel = q.get('channel');
+  const lat = Number(q.get('lat') ?? NaN), lng = Number(q.get('lng') ?? NaN);
+  const valid = (a, b) => Number.isFinite(a) && Number.isFinite(b) && a >= -90 && a <= 90 && b >= -180 && b <= 180;
+  const hasPoint = q.get('marker') === '1' && valid(lat, lng);
+  document.getElementById('error').remove();
+  const map = L.map('map').setView(valid(lat, lng) ? [lat, lng] : [-15.601, -56.097], hasPoint ? 17 : 14);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  let marker;
+  let enabled = q.get('disabled') !== '1';
+  const icon = L.divIcon({className: '', html: '<div class="pin"></div>', iconSize: [26, 26], iconAnchor: [13, 13]});
+  const send = data => parent.postMessage(JSON.stringify({channel, ...data}), location.origin);
+  const report = ({lat, lng}) => send({lat, lng});
+  const place = (point, center) => {
+    if (marker) marker.setLatLng(point);
+    else {
+      marker = L.marker(point, {icon, draggable: enabled, keyboard: true, title: 'Ponto do endereço', alt: 'Ponto do endereço'}).addTo(map);
+      marker.on('dragend', () => { if (enabled) report(marker.getLatLng()); });
+    }
+    if (center) map.setView(point, Math.max(map.getZoom(), 17));
+  };
+  if (hasPoint) place(L.latLng(lat, lng), false);
+  map.on('click', e => {
+    if (!enabled) return;
+    place(e.latlng, false);
+    report(e.latlng);
+  });
+  window.addEventListener('message', e => {
+    if (e.origin !== location.origin || e.source !== parent) return;
+    let state;
+    try { state = JSON.parse(e.data); } catch (_) { return; }
+    if (state?.channel !== channel) return;
+    if (typeof state.enabled === 'boolean') enabled = state.enabled;
+    if (state.point === null) {
+      marker?.remove();
+      marker = undefined;
+    } else {
+      // A PWA tab left open before deployment can still send lat/lng directly.
+      const point = state.point ?? state;
+      if (!valid(point.lat, point.lng)) return;
+      place(L.latLng(point.lat, point.lng), state.center !== false);
+      if (enabled) marker.dragging.enable();
+      else marker.dragging.disable();
+    }
+  });
+  send({ready: true});
+}
 </script></body></html>

@@ -58,10 +58,14 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
     _address = address;
     _addressRevision = address.revision;
     address.addListener(() {
-      if (address.revision != _addressRevision && mounted) {
-        _addressRevision = address.revision;
-        setState(_invalidate);
-      }
+      if (!mounted) return;
+      setState(() {
+        if (address.revision != _addressRevision) {
+          _addressRevision = address.revision;
+          _invalidate();
+          _error = null;
+        }
+      });
     });
   }
 
@@ -103,13 +107,22 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
     widget.draft.transportQuote = null;
   }
 
+  void _showError(String message) {
+    setState(() => _error = message);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _calculate() async {
-    if (!_form.currentState!.validate()) return;
+    if (!_form.currentState!.validate()) {
+      _showError('Confira os campos obrigatórios do endereço e do contato.');
+      return;
+    }
     final address = _address!.value;
     if (address == null) {
-      setState(
-        () => _error =
-            'Selecione o endereço encontrado, use a sua localização ou marque o ponto no mapa.',
+      _showError(
+        'Selecione o endereço encontrado, use a sua localização ou marque o ponto no mapa.',
       );
       return;
     }
@@ -149,7 +162,7 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
         }
       }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) _showError(e.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -184,12 +197,8 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
 
   void _continue() {
     if (!_sameCompany) return;
-    if ((_pickup || _return) &&
-        (_quote == null ||
-            DateTime.parse(
-              _quote!['expiresAt'] as String,
-            ).isBefore(DateTime.now()))) {
-      setState(() => _error = 'Calcule novamente a taxa antes de continuar.');
+    if ((_pickup || _return) && !_hasCurrentQuote) {
+      _calculate();
       return;
     }
     if (widget.appointmentId != null) {
@@ -209,14 +218,25 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
     );
   }
 
+  bool get _hasCurrentQuote {
+    final expiration = _quote?['expiresAt'];
+    return expiration is String &&
+        (DateTime.tryParse(expiration)?.isAfter(DateTime.now()) ?? false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final fromDetail = widget.appointmentId != null;
     final asks = _pickup || _return;
+    final needsQuote = asks && !_hasCurrentQuote;
     final button = FilledButton(
-      onPressed: _busy || _policy == null ? null : _continue,
+      onPressed: _busy || _policy == null || (asks && _address!.busy)
+          ? null
+          : _continue,
       child: Text(
-        fromDetail
+        needsQuote
+            ? 'Calcular taxa de transporte'
+            : fromDetail
             ? (asks
                   ? 'Enviar pedido de transporte'
                   : 'Voltar sem pedir transporte')
@@ -497,13 +517,6 @@ class _TransportOptionsScreenState extends State<TransportOptionsScreen> {
     const SizedBox(height: 14),
     Text(
       'Base: ${formatMoney((_policy!['baseCents'] as num) / 100)} · por km: ${formatMoney((_policy!['perKmCents'] as num) / 100)} · mínimo por trajeto: ${formatMoney((_policy!['minimumCents'] as num) / 100)}',
-    ),
-    const SizedBox(height: 10),
-    // A step of the page: the main button of the step stays the one at the
-    // bottom.
-    OutlinedButton(
-      onPressed: _busy ? null : _calculate,
-      child: const Text('Calcular taxa de transporte'),
     ),
     if (_rememberNote case final note?)
       Padding(

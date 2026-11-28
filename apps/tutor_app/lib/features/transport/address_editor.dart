@@ -26,6 +26,7 @@ class AddressEditingController extends ChangeNotifier {
       district.text = initial.district;
       point = initial.point;
       _pointKept = true;
+      _autoStreet = _autoDistrict = true;
     }
   }
 
@@ -56,7 +57,7 @@ class AddressEditingController extends ChangeNotifier {
   // is corrected; a point of a search result belongs to its text.
   bool _pointKept = false;
   bool _autoStreet = false, _autoDistrict = false;
-  int _reverse = 0;
+  int _request = 0;
 
   /// The complete address, or null while the street, the district or the
   /// point is missing.
@@ -87,20 +88,25 @@ class AddressEditingController extends ChangeNotifier {
 
   /// Clears the street, the district and the point.
   void clear() {
+    _request++;
+    busy = false;
     street.clear();
     district.clear();
     point = null;
     places = [];
     error = info = null;
     _pointKept = _autoStreet = _autoDistrict = false;
-    _reverse++;
     _changed();
   }
 
   void streetEdited() {
     _autoStreet = false;
     places = [];
-    if (!_pointKept) point = null;
+    if (!_pointKept && point != null) {
+      _request++;
+      point = null;
+      info = null;
+    }
     _changed();
   }
 
@@ -116,93 +122,110 @@ class AddressEditingController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    final request = ++_request;
     busy = true;
     error = info = null;
     places = [];
     notifyListeners();
     try {
-      places = await search(query);
+      final results = await search(query);
+      if (request != _request) return;
+      places = results;
       if (places.isEmpty) {
         error =
             'Nenhum endereço encontrado. Complete a busca ou marque no mapa.';
       }
     } catch (e) {
-      error = e is FormatException ? e.message : e.toString();
+      if (request == _request) {
+        error = e is FormatException ? e.message : e.toString();
+      }
     } finally {
-      busy = false;
+      if (request == _request) {
+        busy = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> choosePlace(Map<String, dynamic> place) {
+    final selected = place['point'] as Map;
+    return _selectPoint(
+      (selected['lat'] as num).toDouble(),
+      (selected['lng'] as num).toDouble(),
+      keepOnStreetEdit: false,
+      note: 'Endereço selecionado no mapa.',
+    );
+  }
+
+  /// A point marked on the map or read from the device.
+  Future<void> setPoint(double lat, double lng, {String? note}) => _selectPoint(
+    lat,
+    lng,
+    keepOnStreetEdit: true,
+    note: note ?? 'Ponto selecionado no mapa.',
+  );
+
+  Future<void> _selectPoint(
+    double lat,
+    double lng, {
+    required bool keepOnStreetEdit,
+    required String note,
+  }) async {
+    final request = ++_request;
+    busy = false;
+    if (point?['lat'] != lat || point?['lng'] != lng) {
+      if (_autoStreet) street.clear();
+      if (_autoDistrict) district.clear();
+    }
+    point = {'lat': lat, 'lng': lng};
+    _pointKept = keepOnStreetEdit;
+    places = [];
+    error = null;
+    final reverse = this.reverse;
+    final needsAddress = value == null;
+    info = needsAddress
+        ? '$note ${reverse == null ? 'Preencha a rua, o número e o bairro.' : 'Buscando rua e bairro…'}'
+        : '$note Confira se a rua, o número e o bairro correspondem ao ponto.';
+    _changed();
+    if (reverse == null || !needsAddress) return;
+    ReversedAddress? found;
+    try {
+      found = await reverse(lat, lng);
+    } catch (_) {
+      // The tutor can complete the address without the map service.
+    }
+    if (request != _request) return;
+    final resolvedStreet = found?.street ?? '';
+    final resolvedDistrict = found?.district ?? '';
+    final fillStreet = street.text.trim().isEmpty && resolvedStreet.isNotEmpty;
+    final fillDistrict =
+        district.text.trim().isEmpty && resolvedDistrict.isNotEmpty;
+    if (fillStreet) {
+      street.text = resolvedStreet;
+      _autoStreet = true;
+    }
+    if (fillDistrict) {
+      district.text = resolvedDistrict;
+      _autoDistrict = true;
+    }
+    info = value == null
+        ? '$note Complete a rua, o número e o bairro para continuar.'
+        : '$note Confira o número e o complemento.';
+    if (fillStreet || fillDistrict) {
+      _changed();
+    } else {
       notifyListeners();
     }
   }
 
-  void choosePlace(Map<String, dynamic> place) {
-    point = Map<String, dynamic>.from(place['point'] as Map);
-    _pointKept = false;
-    places = [];
-    info = 'Ponto do endereço marcado no mapa. Arraste o marcador se precisar.';
-    error = null;
-    _changed();
-  }
-
-  /// A point marked on the map or read from the device.
-  Future<void> setPoint(double lat, double lng, {String? note}) async {
-    point = {'lat': lat, 'lng': lng};
-    _pointKept = true;
-    places = [];
-    error = null;
-    info = note;
-    _changed();
-    final reverse = this.reverse;
-    if (reverse == null) return;
-    final request = ++_reverse;
-    try {
-      final found = await reverse(lat, lng);
-      if (request != _reverse) return;
-      final fillStreet = street.text.trim().isEmpty || _autoStreet;
-      final fillDistrict = district.text.trim().isEmpty || _autoDistrict;
-      if (found == null || found.street.isEmpty) {
-        if (fillStreet) {
-          info = [
-            ?note,
-            'Não achamos a rua deste ponto. Escreva o endereço com o número.',
-          ].join(' ');
-        }
-        notifyListeners();
-        return;
-      }
-      if (fillStreet) {
-        street.text = found.street;
-        _autoStreet = true;
-      }
-      if (fillDistrict && found.district.isNotEmpty) {
-        district.text = found.district;
-        _autoDistrict = true;
-      }
-      if (fillStreet || fillDistrict) {
-        info = [
-          ?note,
-          'Endereço preenchido pelo ponto. Confira o número e o complemento.',
-        ].join(' ');
-      }
-      _changed();
-    } catch (_) {
-      // Without the street of the point the tutor writes it; the point stays.
-      if (request == _reverse && (street.text.trim().isEmpty)) {
-        info = [
-          ?note,
-          'Escreva o endereço com o número; o ponto do mapa foi marcado.',
-        ].join(' ');
-        notifyListeners();
-      }
-    }
-  }
-
   Future<void> useDeviceLocation() async {
+    final request = ++_request;
     busy = true;
     error = info = null;
     notifyListeners();
     try {
       final here = await locate();
-      busy = false;
+      if (request != _request) return;
       await setPoint(
         here.lat,
         here.lng,
@@ -210,19 +233,24 @@ class AddressEditingController extends ChangeNotifier {
             'Localização do aparelho marcada no mapa${here.accuracy > 0 && here.accuracy.isFinite ? ', com precisão de cerca de ${here.accuracy.round()} m' : ''}. Arraste o marcador se precisar.',
       );
     } on DeviceLocationException catch (problem) {
-      error = problem.message;
+      if (request == _request) error = problem.message;
     } catch (_) {
-      error = const DeviceLocationException(
-        DeviceLocationProblem.unavailable,
-      ).message;
+      if (request == _request) {
+        error = const DeviceLocationException(
+          DeviceLocationProblem.unavailable,
+        ).message;
+      }
     } finally {
-      busy = false;
-      notifyListeners();
+      if (request == _request) {
+        busy = false;
+        notifyListeners();
+      }
     }
   }
 
   @override
   void dispose() {
+    _request++;
     street.dispose();
     district.dispose();
     super.dispose();
@@ -370,8 +398,9 @@ class AddressMap extends StatelessWidget {
           child: MapPicker(
             center: center,
             point: controller.point,
+            enabled: enabled,
             onSelected: (lat, lng) {
-              if (enabled && !controller.busy) controller.setPoint(lat, lng);
+              if (enabled) controller.setPoint(lat, lng);
             },
           ),
         ),
