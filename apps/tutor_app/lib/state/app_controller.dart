@@ -297,6 +297,8 @@ class AppController extends AppControllerBase
   /// session does not ask again.
   bool _loginCodePending = false;
   String? _loginChallenge;
+  bool _loadingInitialData = false;
+  bool get loadingInitialData => _loadingInitialData;
   bool get loginCodePending =>
       _loginCodePending && _tutor != null && _repository is LoginCodeRepository;
   Future<bool> requestLoginCode() => _guard(() async {
@@ -320,26 +322,39 @@ class AppController extends AppControllerBase
     notifyListeners();
   }
 
-  Future<bool> signIn(String identifier, String password) => _guard(() async {
+  Future<bool> signIn(String identifier, String password) =>
+      _signIn(() => _repository.signIn(identifier, password));
+
+  Future<bool> signInWithGoogle() =>
+      _signIn(() => _session?.signInWithGoogle());
+
+  Future<bool> _signIn(Future<Tutor>? Function() authenticate) async {
     final epoch = _epoch;
-    final tutor = await _repository.signIn(identifier, password);
+    final signedIn = await _guard(() async {
+      final tutor = await authenticate();
+      if (tutor == null || epoch != _epoch) return;
+      _tutor = tutor;
+      _loginCodePending = true;
+      _takeRemovedCompany();
+      if (integrated) {
+        _loadingInitialData = companyId != null;
+      } else {
+        await _loadData();
+      }
+    });
+    if (signedIn && _loadingInitialData) {
+      unawaited(_loadInitialData(epoch));
+    }
+    return signedIn;
+  }
+
+  Future<void> _loadInitialData(int epoch) async {
+    await _guard(_loadData);
     if (epoch != _epoch) return;
-    _tutor = tutor;
-    _loginCodePending = true;
-    _takeRemovedCompany();
-    await _loadData();
-  });
-  Future<bool> signInWithGoogle() => _guard(() async {
-    final session = _session;
-    if (session == null) return;
-    final epoch = _epoch;
-    final tutor = await session.signInWithGoogle();
-    if (epoch != _epoch) return;
-    _tutor = tutor;
-    _loginCodePending = true;
-    _takeRemovedCompany();
-    await _loadData();
-  });
+    _loadingInitialData = false;
+    notifyListeners();
+  }
+
   List<String> get providers => _session?.providers ?? const [];
   Future<bool> linkGoogle() => _guard(() async {
     await _session?.linkGoogle();
@@ -679,6 +694,7 @@ class AppController extends AppControllerBase
     if (forgetInvite) pendingInvite = null;
     _loginCodePending = false;
     _loginChallenge = null;
+    _loadingInitialData = false;
     serviceQuoteChange = null;
     linkNotice = null;
     _returnCompanyId = null;

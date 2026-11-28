@@ -137,11 +137,13 @@ class _MainShellState extends State<MainShell>
 
   @override
   Future<void> openBooking() async {
-    if (AppScope.of(context).companyReadOnly) {
+    final controller = AppScope.of(context);
+    if (controller.loadingInitialData) return;
+    if (controller.companyReadOnly) {
       await showReadOnlyCompany(context);
       return;
     }
-    if (AppScope.of(context).companyBookingPaused) {
+    if (controller.companyBookingPaused) {
       await showBookingByPhone(context);
       return;
     }
@@ -418,10 +420,16 @@ class _TabsPage extends StatelessWidget {
                 ),
               Expanded(
                 key: const ValueKey('tutor.tabs'),
-                child: IndexedStack(
-                  index: index,
-                  children: tipTabs(index, pages),
-                ),
+                child: controller.loadingInitialData && index != 3
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          semanticsLabel: 'Carregando seus dados',
+                        ),
+                      )
+                    : IndexedStack(
+                        index: index,
+                        children: tipTabs(index, pages),
+                      ),
               ),
             ],
           ),

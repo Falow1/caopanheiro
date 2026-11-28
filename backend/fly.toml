@@ -11,6 +11,7 @@ kill_timeout = '30s'
 
 [env]
   GCLOUD_PROJECT = 'caopanheiro-staging-fly'
+  SAAS_DEMO_SKIP_CODE = 'true'
   PORT = '8080'
 
 # A máquina para sem chamadas e volta na primeira: a cobrança é por tempo ligada.

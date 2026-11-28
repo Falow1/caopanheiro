@@ -10,7 +10,7 @@
 ![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white)
 ![Fly.io](https://img.shields.io/badge/API-Fly.io-7B3FE4?logo=flydotio&logoColor=white)
 ![Plataformas](https://img.shields.io/badge/plataformas-Android%20%7C%20Web%20(PWA)-A64B1E)
-![Versão](https://img.shields.io/badge/vers%C3%A3o-1.4.0-1F2A2E)
+![Versão](https://img.shields.io/badge/vers%C3%A3o-1.5.0-1F2A2E)
 
 [Abrir o app do tutor](https://caopanheiro-app.web.app) · [Baixar os apps Android](https://github.com/Falow1/caopanheiro/releases/latest)
 
@@ -135,6 +135,8 @@ backend/
 ```
 
 ## Status
+
+Na versão 1.5.0, a conta de demonstração do SaaS pode continuar sem código após o login. O Equipe registra observações internas na ficha do pet, e os relatos profissionais continuam disponíveis ao Tutor no atendimento. Os três apps ganharam melhorias no login.
 
 Na versão 1.4.0, o Tutor permite distribuir os pets no agendamento, mostra um cartão por pet e permite editar o endereço pelo mapa. Tocar novamente nas caixas do código de verificação reabre o teclado numérico.
 

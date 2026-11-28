@@ -19,9 +19,13 @@ class AppController extends AppControllerBase with LiveFollowing {
       ? _repository as SaasAdministration
       : null;
   bool get requiresEmailCode => _administration?.requiresEmailCode ?? false;
-  SaasGoogleAccess? get _google => _repository is SaasGoogleAccess
-      ? _repository as SaasGoogleAccess
+  SaasDemoAdministration? get _demoAdministration =>
+      _repository is SaasDemoAdministration
+      ? _repository as SaasDemoAdministration
       : null;
+  bool get canSkipEmailCode => _demoAdministration?.canSkipEmailCode ?? false;
+  SaasGoogleAccess? get _google =>
+      _repository is SaasGoogleAccess ? _repository as SaasGoogleAccess : null;
   SaasSupportDesk? get _desk =>
       _repository is SaasSupportDesk ? _repository as SaasSupportDesk : null;
 
@@ -43,6 +47,7 @@ class AppController extends AppControllerBase with LiveFollowing {
   });
 
   bool get supportDeskAvailable => _desk != null;
+
   /// "Renovar até" (E2), for exceptions; the reason goes to the audit.
   Future<bool> renewSubscriptionUntil(
     String tenantId,
@@ -51,7 +56,9 @@ class AppController extends AppControllerBase with LiveFollowing {
   ) => _mutation(() async {
     final Object repository = _repository;
     if (repository is! SaasRenewalDesk) {
-      throw const FormatException('Renovação disponível somente na integração.');
+      throw const FormatException(
+        'Renovação disponível somente na integração.',
+      );
     }
     await repository.renewSubscriptionUntil(tenantId, day, reason);
   });
@@ -201,13 +208,23 @@ class AppController extends AppControllerBase with LiveFollowing {
   Future<bool> requestEmailCode() => _guard(() async {
     await _operations.requestEmailCode();
   });
-  Future<bool> verifyEmailCode(String code) => _guard(() async {
-    final epoch = _epoch;
-    final admin = await _operations.verifyEmailCode(code);
-    if (epoch != _epoch) return;
-    _admin = admin;
-    await _reload();
-  });
+  Future<bool> verifyEmailCode(String code) =>
+      _confirmEmailSession(() => _operations.verifyEmailCode(code));
+
+  Future<bool> skipDemoEmailCode() {
+    final demo = _demoAdministration;
+    if (demo == null || !demo.canSkipEmailCode) return Future.value(false);
+    return _confirmEmailSession(demo.skipDemoEmailCode);
+  }
+
+  Future<bool> _confirmEmailSession(Future<SuperAdmin> Function() confirm) =>
+      _guard(() async {
+        final epoch = _epoch;
+        final admin = await confirm();
+        if (epoch != _epoch) return;
+        _admin = admin;
+        await _reload();
+      });
   Future<bool> changePassword(String current, String password) async {
     final success = await _guard(
       () => _operations.changePassword(current, password),

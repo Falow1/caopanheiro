@@ -8,6 +8,7 @@ import '../../domain/models.dart';
 import '../../state/app_scope.dart';
 import '../pets/breed_field.dart' show PetTextDialog;
 import '../pets/pet_form_screen.dart';
+import 'customer_pet_notes_screen.dart';
 
 /// Pet of the customer screen: breed icon, whether the petshop serves it and,
 /// for the team, "Não atender este pet" / "Voltar a atender".
@@ -167,6 +168,24 @@ class CustomerPetCard extends StatelessWidget {
                     )
                   : null,
             ),
+            if (controller.petInternalNotesAvailable)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => CustomerPetNotesScreen(
+                        customerId: customerId,
+                        pet: pet,
+                        sessionKey: controller.sessionKey,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.sticky_note_2_outlined),
+                  label: const Text('Observações internas'),
+                ),
+              ),
             // The decision of not serving stays in sight, not in a menu.
             if (blockable)
               Padding(

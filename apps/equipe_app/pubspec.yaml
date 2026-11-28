@@ -2,7 +2,7 @@ name: equipe_app
 description: "Aplicativo Cãopanheiro para gestor, atendente, profissional e entregador."
 publish_to: 'none'
 resolution: workspace
-version: 1.4.0+25
+version: 1.5.0+26
 
 environment:
   sdk: ^3.12.2

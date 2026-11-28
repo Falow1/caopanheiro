@@ -184,22 +184,7 @@ class FirebaseLocalRepository
       if (generation != _session) {
         throw const FormatException('Sessão encerrada.');
       }
-      final activation = await _loadManagerActivation(generation);
-      if (activation.companies.isNotEmpty) {
-        throw ManagerActivationRequired(activation);
-      }
-      final staffActivation = await _loadStaffActivation(generation);
-      if (staffActivation.companies.isNotEmpty) {
-        throw StaffActivationRequired(staffActivation);
-      }
-      final companies = await getCompanies();
-      if (generation != _session) {
-        throw const FormatException('Sessão encerrada.');
-      }
-      if (companies.isEmpty && _pausedCompanies.isNotEmpty) {
-        throw AccessPausedRequired(_pausedCompanies);
-      }
-      return companies.first.user;
+      return await _finishSignIn(generation);
     } on ManagerActivationRequired {
       rethrow;
     } on StaffActivationRequired {
@@ -751,25 +736,27 @@ class FirebaseLocalRepository
           await _auth.signOut();
           throw const FormatException('Sessão encerrada.');
         }
-        final activation = await _loadManagerActivation(generation);
-        if (activation.companies.isNotEmpty) {
-          throw ManagerActivationRequired(activation);
-        }
-        final staffActivation = await _loadStaffActivation(generation);
-        if (staffActivation.companies.isNotEmpty) {
-          throw StaffActivationRequired(staffActivation);
-        }
-        final companies = await getCompanies();
-        if (generation != _session) {
-          throw const FormatException('Sessão encerrada.');
-        }
-        // Only paused petshops (E2): the principal manager enters the
-        // paused screen, for the plan, Support and the export.
-        if (companies.isEmpty && _pausedCompanies.isNotEmpty) {
-          throw AccessPausedRequired(_pausedCompanies);
-        }
-        return companies.first.user;
+        return _finishSignIn(generation);
       }, signingIn: true);
+
+  Future<InternalUser> _finishSignIn(int generation) async {
+    final managerRequest = _loadManagerActivation(generation);
+    final staffRequest = _loadStaffActivation(generation);
+    // A manager invitation takes priority even if the staff request fails.
+    staffRequest.ignore();
+    final manager = await managerRequest;
+    if (manager.companies.isNotEmpty) throw ManagerActivationRequired(manager);
+    final staff = await staffRequest;
+    if (staff.companies.isNotEmpty) throw StaffActivationRequired(staff);
+    final companies = await getCompanies();
+    if (generation != _session) {
+      throw const FormatException('Sessão encerrada.');
+    }
+    if (companies.isEmpty && _pausedCompanies.isNotEmpty) {
+      throw AccessPausedRequired(_pausedCompanies);
+    }
+    return companies.first.user;
+  }
 
   @override
   Future<List<TeamCompany>> getCompanies() => _remote(() async {

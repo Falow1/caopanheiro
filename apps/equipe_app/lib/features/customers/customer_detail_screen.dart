@@ -235,12 +235,14 @@ class CustomerDetailScreen extends StatelessWidget {
             SectionTitle(
               'Pets',
               action:
-                  controller.catalogOffline ||
+                  customer.tutorUid != null ||
+                      controller.catalogOffline ||
                       !controller.user!.canManage('CUSTOMERS')
                   ? null
                   : 'Adicionar pet',
               onAction:
-                  controller.catalogOffline ||
+                  customer.tutorUid != null ||
+                      controller.catalogOffline ||
                       !controller.user!.canManage('CUSTOMERS')
                   ? null
                   : () => Navigator.push(

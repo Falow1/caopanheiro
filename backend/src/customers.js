@@ -72,10 +72,10 @@ export const savePet = onCall(options, async (request) => {
     if (!previous.exists) throw new HttpsError('not-found', 'Cliente não encontrado.');
     const pets = previous.get('pets') ?? {};
     if (!pets[petId] && Object.keys(pets).length >= 100) invalid('Limite de pets deste cadastro atingido.');
-    // A pet of a tutor with the app is edited only by that tutor.
-    if (pets[petId] && previous.get('tutorUid')) throw new HttpsError('failed-precondition', 'Os dados deste pet são mantidos pelo tutor no app.');
+    // After linking, the tutor manages the pets in this customer record.
+    if (previous.get('tutorUid')) throw new HttpsError('failed-precondition', 'Os dados deste pet são mantidos pelo tutor no app.');
     const before = pets[petId] ? normalizedPet(pets[petId]) : null;
-    const pet = keepLegacyBreed({ ...input }, before); const policy = storedPetPolicy(policyDoc);
+    const pet = keepLegacyBreed({ ...input, notes: before?.notes ?? '' }, before); const policy = storedPetPolicy(policyDoc);
     // A new pet or a new breed follows the rule of the petshop; the other
     // data of a pet it no longer serves can still be edited.
     if (!before || before.breedCode !== pet.breedCode) refuseUnservedPet(policy, pet);

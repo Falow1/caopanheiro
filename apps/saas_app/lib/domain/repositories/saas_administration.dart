@@ -9,3 +9,8 @@ abstract interface class SaasAdministration {
   Future<PlatformHealth> health();
   Future<SupportDiagnostic> diagnose(String tenantId, String reason);
 }
+
+abstract interface class SaasDemoAdministration {
+  bool get canSkipEmailCode;
+  Future<SuperAdmin> skipDemoEmailCode();
+}

@@ -34,6 +34,7 @@ import '../domain/repositories/scheduling_repository.dart';
 import '../domain/models/scheduling_policy.dart';
 import '../domain/models.dart';
 import '../domain/models/team_company.dart';
+import '../domain/models/pet_internal_note.dart';
 
 class AppController extends AppControllerBase
     with LiveFollowing
@@ -757,6 +758,52 @@ class AppController extends AppControllerBase
   /// Plan, support and notices need the server and one selected petshop.
   bool get companyExtrasAvailable =>
       _extras != null && _company != null && !readOnly;
+  bool get petInternalNotesAvailable {
+    final current = _user;
+    return companyExtrasAvailable &&
+        current != null &&
+        current.hasTeamOperations &&
+        current.canManage('CUSTOMERS');
+  }
+
+  Future<({List<PetInternalNote> items, String? nextCursor})>
+  loadPetInternalNotes(
+    String customerId,
+    String petId, {
+    String? cursor,
+  }) async {
+    final result = await _companyQuery('getPetInternalNotes', {
+      'customerId': customerId,
+      'petId': petId,
+      'cursor': ?cursor,
+    });
+    return (
+      items: (result['items'] as List).map(PetInternalNote.fromJson).toList(),
+      nextCursor: result['nextCursor'] as String?,
+    );
+  }
+
+  Future<PetInternalNote> addPetInternalNote(
+    String customerId,
+    String petId,
+    String text,
+  ) async {
+    final epoch = _sessionEpoch;
+    final extras = _extras;
+    if (extras == null || !petInternalNotesAvailable) {
+      throw const FormatException('Observações internas indisponíveis.');
+    }
+    final result = await extras.companyCommand('addPetInternalNote', {
+      'customerId': customerId,
+      'petId': petId,
+      'text': text,
+    });
+    if (epoch != _sessionEpoch) {
+      throw const FormatException('Sessão ou empresa alterada.');
+    }
+    return PetInternalNote.fromJson(result['note']);
+  }
+
   late final RoleNoticesSource _teamNoticesSource = _TeamNotices(this);
 
   /// In-app notices of management/attendance for the selected petshop.

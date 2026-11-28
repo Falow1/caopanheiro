@@ -23,7 +23,6 @@ class _PetFormScreenState extends State<PetFormScreen> {
   late final _petId = widget.pet?.id ?? newRecordId();
   final _key = GlobalKey<FormState>();
   late final _name = TextEditingController(text: widget.pet?.name);
-  late final _notes = TextEditingController(text: widget.pet?.notes);
   late String _species = widget.pet?.species ?? 'Cachorro';
   // The size is not chosen: it comes from the breed, on the server too.
   late PetBreed? _breed = widget.pet?.breedEntry;
@@ -34,7 +33,6 @@ class _PetFormScreenState extends State<PetFormScreen> {
   @override
   void dispose() {
     _name.dispose();
-    _notes.dispose();
     super.dispose();
   }
 
@@ -67,7 +65,7 @@ class _PetFormScreenState extends State<PetFormScreen> {
       name: _name.text.trim(),
       breed: _breed!,
       birthDate: _birth,
-      notes: _notes.text.trim(),
+      notes: widget.pet?.notes ?? '',
       breedSuggestion: _suggestion,
     );
     if (await AppScope.of(context).savePet(widget.customerId, value) &&
@@ -155,12 +153,6 @@ class _PetFormScreenState extends State<PetFormScreen> {
                     );
                     if (value != null) setState(() => _birth = value);
                   },
-                ),
-                const SizedBox(height: 14),
-                TextFormField(
-                  controller: _notes,
-                  maxLines: 3,
-                  decoration: const InputDecoration(labelText: 'Observações'),
                 ),
                 const SizedBox(height: 24),
                 FilledButton(

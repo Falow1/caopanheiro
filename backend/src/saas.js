@@ -13,7 +13,7 @@ import { tenantOverview } from './saas_overview.js';
 import { staffMembers } from './staff_members.js';
 import { purgeAt, retention } from './retention.js';
 import { queueManagerInvitation } from './mail_outbox.js';
-import { emailSessionValid, requireEmailSession } from './saas_email.js';
+import { canSkipSaasEmailCode, emailSessionValid, requireEmailSession } from './saas_email.js';
 import { stateTimeZone } from './calendar.js';
 import { AWAITING_MANAGER } from './billing_policy.js';
 
@@ -76,7 +76,9 @@ export async function platformCommand(request, action, normalized, apply) {
 export const getSaasContext = onCall(options, async (request) => {
   const db = localBackend(); const uid = await actor(request); object(request.data, [], 'Consulta');
   const admin = await adminAccess(db, db, uid);
-  return { uid, requiresEmailCode: !await emailSessionValid(request, db, uid), profile: { name: admin.get('name') ?? 'Administrador', email: admin.get('email') ?? '', role: 'Superadmin' } };
+  const requiresEmailCode = !await emailSessionValid(request, db, uid);
+  return { uid, requiresEmailCode, canSkipEmailCode: requiresEmailCode && canSkipSaasEmailCode(request.auth.token, admin),
+    profile: { name: admin.get('name') ?? 'Administrador', email: admin.get('email') ?? '', role: 'Superadmin' } };
 });
 export const getSaasData = onCall(options, async (request) => {
   const db = localBackend(); const uid = await actor(request);

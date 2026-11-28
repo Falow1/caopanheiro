@@ -75,7 +75,6 @@ Map<String, dynamic> petCommandJson(Pet value) => {
     'size': value.size,
   },
   'birthDate': petBirthDate(value.birthDate),
-  'notes': value.notes,
   if (value.breedSuggestion != null) 'breedSuggestion': value.breedSuggestion,
 };
 Customer customerFromJson(Map<String, dynamic> value) => Customer(

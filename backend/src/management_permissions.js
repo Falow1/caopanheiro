@@ -13,6 +13,7 @@ export function effectiveManagementPermissions(member) {
 }
 const actions = {
   saveCustomer:'CUSTOMERS',savePet:'CUSTOMERS',createTutorLink:'CUSTOMERS',getTutorJoinLink:'CUSTOMERS',blockPet:'CUSTOMERS',unblockPet:'CUSTOMERS',
+  getPetInternalNotes:'CUSTOMERS',addPetInternalNote:'CUSTOMERS',
   saveAppointment:'APPOINTMENTS',updateAppointmentNotes:'APPOINTMENTS',updateAppointmentStatus:'APPOINTMENTS',addServiceObservation:'APPOINTMENTS',saveBlock:'APPOINTMENTS',removeBlock:'APPOINTMENTS',
   createService:'SERVICES',updateService:'SERVICES',deactivateService:'SERVICES',
   saveProfessional:'PROFESSIONALS',saveSchedulingPolicy:'SETTINGS',saveTransportPolicy:'SETTINGS',savePetPolicy:'SETTINGS',

@@ -7,6 +7,18 @@ import { actor, digest, identifier, localBackend, object, options } from './runt
 import { purgeAt, retention } from './retention.js';
 import { queuePlatformEmail } from './mail_outbox.js';
 
+const DEMO_EMAIL = 'admin@caop.test';
+function demoIdentity(token) {
+  const staging = process.env.GCLOUD_PROJECT === 'caopanheiro-staging-fly';
+  const emulator = process.env.GCLOUD_PROJECT === 'demo-caopanheiro-local' && process.env.FUNCTIONS_EMULATOR === 'true';
+  return (staging || emulator) && process.env.SAAS_DEMO_SKIP_CODE === 'true'
+    && token.email === DEMO_EMAIL && token.email_verified === true;
+}
+
+export function canSkipSaasEmailCode(token, admin) {
+  return demoIdentity(token) && admin.get('demoData') === true && admin.get('email') === DEMO_EMAIL;
+}
+
 async function administrator(db, uid) {
   const doc = await db.doc(`platformAdmins/${uid}`).get();
   if (!doc.exists || doc.get('active') !== true || doc.get('role') !== 'ADMIN') {
@@ -19,6 +31,7 @@ export async function emailSessionValid(request, db, uid) {
   if (typeof session !== 'string' || !/^[a-f0-9]{64}$/.test(session)) return false;
   const doc = await db.doc(`platformEmailSessions/${digest(session)}`).get();
   return doc.exists && doc.get('uid') === uid && doc.get('expiresAt').toMillis() > Date.now()
+    && (doc.get('method') !== 'demo' || demoIdentity(token))
     && token.saasEmailExpiresAt === Math.floor(doc.get('expiresAt').toMillis() / 1000);
 }
 export async function requireEmailSession(request, db, uid) {
@@ -26,6 +39,31 @@ export async function requireEmailSession(request, db, uid) {
     throw new HttpsError('permission-denied', 'Confirme o código enviado ao seu e-mail para acessar a administração.');
   }
 }
+
+export const skipSaasEmailCodeForDemo = onCall(options, async (request) => {
+  const db = localBackend(), uid = await actor(request);
+  object(request.data, [], 'Sessão de demonstração');
+  const admin = await administrator(db, uid);
+  if (!canSkipSaasEmailCode(request.auth.token, admin)) {
+    throw new HttpsError('permission-denied', 'Confirme o código enviado ao seu e-mail.');
+  }
+  const now = Date.now(), session = randomBytes(32).toString('hex');
+  const expiresAt = Timestamp.fromMillis(now + 3600000);
+  const limiter = db.doc(`platformEmailLimits/demo-${uid}`);
+  await db.runTransaction(async (tx) => {
+    const previous = await tx.get(limiter);
+    if (previous.exists && now - previous.get('sentAt') < 5000) {
+      throw new HttpsError('resource-exhausted', 'Aguarde alguns segundos antes de tentar novamente.');
+    }
+    tx.set(limiter, { sentAt: now, purgeAt: purgeAt(retention.limit, now) });
+    tx.create(db.doc(`platformEmailSessions/${digest(session)}`), {
+      uid, method: 'demo', expiresAt, verifiedAt: Timestamp.fromMillis(now),
+      purgeAt: purgeAt(retention.afterSession, expiresAt.toMillis()),
+    });
+  });
+  const customToken = await getAuth().createCustomToken(uid, { saasEmailSession: session, saasEmailExpiresAt: Math.floor(expiresAt.toMillis() / 1000) });
+  return { customToken };
+});
 export const requestSaasEmailCode = onCall(options, async (request) => {
   const db = localBackend(), uid = await actor(request);
   object(request.data, [], 'Código'); await administrator(db, uid);

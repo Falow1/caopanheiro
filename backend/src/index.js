@@ -176,6 +176,7 @@ export const getTeamContext = onCall(options, async (request) => {
 });
 
 export { getTeamCustomers, saveCustomer, savePet, createTutorLink, acceptTutorLink } from './customers.js';
+export { getPetInternalNotes, addPetInternalNote } from './pet_notes.js';
 export { getPetPolicy, savePetPolicy, blockPet, unblockPet } from './pet_service.js';
 
 export { getAvailableSlots, saveAppointment, updateAppointmentNotes, updateAppointmentStatus, getTeamResource, getSchedulingPolicy, saveSchedulingPolicy, saveProfessional, saveBlock, removeBlock } from './scheduling.js';
@@ -188,7 +189,7 @@ export { getSaasContext, getSaasData, saveTenant, setTenantStatus, savePlan, upd
 export { getSaasDiagnostics } from './saas.js';
 export { recordSaasSession, changeSaasPassword, getSaasHealth, live, ready } from './saas_security.js';
 
-export { requestSaasEmailCode, verifySaasEmailCode } from './saas_email.js';
+export { requestSaasEmailCode, verifySaasEmailCode, skipSaasEmailCodeForDemo } from './saas_email.js';
 export { requestLoginCode, verifyLoginCode } from './login_code.js';
 export { registerPushToken, unregisterPushToken } from './push_tokens.js';
 

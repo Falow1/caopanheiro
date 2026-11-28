@@ -59,6 +59,7 @@ class FirebaseSaasRepository
         SaasRepository,
         SaasSession,
         SaasAdministration,
+        SaasDemoAdministration,
         SaasGoogleAccess,
         SaasSupportDesk,
         SaasBreedSuggestions,
@@ -91,10 +92,13 @@ class FirebaseSaasRepository
   @override
   bool requiresEmailCode = false;
   @override
+  bool canSkipEmailCode = false;
+  @override
   bool get authenticated => _gateway.uid != null;
   String? _emailChallenge;
   int _epoch = 0;
   Future<void> _ending = Future.value();
+  Future<void>? _readContext;
   Map<String, dynamic>? _profile;
   final Set<String> _offlineResources = {};
   final Set<String> _refreshed = {};
@@ -126,6 +130,7 @@ class FirebaseSaasRepository
     }
     final profile = _map(value['profile']);
     requiresEmailCode = value['requiresEmailCode'] == true;
+    canSkipEmailCode = requiresEmailCode && value['canSkipEmailCode'] == true;
     if (requiresEmailCode) {
       await _cache.clear();
       _check(epoch, uid);
@@ -369,7 +374,8 @@ class FirebaseSaasRepository
     final epoch = _epoch;
     final uid = _gateway.uid;
     try {
-      await _context();
+      await _contextForRead();
+      _check(epoch, uid);
       final rows = <Map<String, dynamic>>[];
       String? cursor;
       do {
@@ -405,9 +411,21 @@ class FirebaseSaasRepository
       _times[resource] = saved.updatedAt;
       return saved.items;
     } on SessionAccessException {
-      await signOut();
+      if (epoch == _epoch && uid == _gateway.uid) await signOut();
       rethrow;
     }
+  }
+
+  Future<void> _contextForRead() {
+    final pending = _readContext;
+    if (pending != null) return pending;
+    // The dashboard reads several resources together. Share only the
+    // in-flight check so subsequent reads still confirm access with the server.
+    late final Future<void> request;
+    request = _context().whenComplete(() {
+      if (identical(_readContext, request)) _readContext = null;
+    });
+    return _readContext = request;
   }
 
   @override
@@ -632,8 +650,26 @@ class FirebaseSaasRepository
       'challengeId': _emailChallenge,
       'code': code.trim(),
     });
+    return _acceptEmailSession(epoch, uid, response['customToken'] as String);
+  }
+
+  @override
+  Future<SuperAdmin> skipDemoEmailCode() async {
+    if (!canSkipEmailCode) {
+      throw const FormatException('Confirme o código enviado ao seu e-mail.');
+    }
+    final epoch = _epoch, uid = _gateway.uid;
+    final response = await _gateway.call('skipSaasEmailCodeForDemo', {});
+    return _acceptEmailSession(epoch, uid, response['customToken'] as String);
+  }
+
+  Future<SuperAdmin> _acceptEmailSession(
+    int epoch,
+    String? uid,
+    String token,
+  ) async {
     _check(epoch, uid);
-    await _gateway.acceptAdministrativeToken(response['customToken'] as String);
+    await _gateway.acceptAdministrativeToken(token);
     _check(epoch, uid);
     await _context();
     if (requiresEmailCode) {
@@ -716,8 +752,10 @@ class FirebaseSaasRepository
   @override
   Future<void> signOut() {
     ++_epoch;
+    _readContext = null;
     _profile = null;
     requiresEmailCode = false;
+    canSkipEmailCode = false;
     _emailChallenge = null;
     _times.clear();
     _refreshed.clear();
